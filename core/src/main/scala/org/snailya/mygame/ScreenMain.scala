@@ -99,13 +99,6 @@ class ScreenMain extends ScreenBase {
     * UI
     */
 
-  val hackTextField: TextField = {
-    val ts = new TextFieldStyle()
-    ts.font = Roboto20.internal
-    ts.fontColor = Color.WHITE
-    new TextField("", ts)
-  }
-
   def drawTree(tree: Tree, left: Float, top: Float): Float = {
     val font = Roboto20
     var height = top
@@ -139,11 +132,17 @@ class ScreenMain extends ScreenBase {
 
     override def keyDown(keycode: Int) = false
 
-    override def keyUp(keycode: Int) = if (!state.isInsert) {
-      keycode match {
-        case Keys.I =>  // enter insert mode
+    override def keyUp(keycode: Int) = false
+
+    override def keyTyped(character: Char) = if (state.isInsert) {
+      assert(state.selection.isDefined)
+      val selected = state.selection.get
+      true
+    } else {
+      character match {
+        case 'i' =>  // enter insert mode
           state.isInsert = true
-        case Keys.N => // new empty node
+        case 'n' => // new empty node
           state.selection match {
             case Some(t) =>
               val c = new Tree(None)
@@ -151,20 +150,20 @@ class ScreenMain extends ScreenBase {
               state.selection = Some(c)
             case None =>
           }
-        case Keys.K => // go to parent
+        case 'k' => // go to parent
           state.selection match {
             case Some(t) =>
               state.selection = t.parent
             case _ =>
           }
-        case Keys.J => // go to first child
+        case 'j' => // go to first child
           state.selection match {
             case Some(t) =>
               if (t.childs.nonEmpty) state.selection = Some(t.childs.head)
             case _ => state.selection = Some(state.root)
 
           }
-        case Keys.L => // go to next sibling
+        case 'l' => // go to next sibling
           state.selection match {
             case Some(t) =>
               t.parent match {
@@ -175,7 +174,7 @@ class ScreenMain extends ScreenBase {
               }
             case _ =>
           }
-        case Keys.H => // go to previous sibling
+        case 'h' => // go to previous sibling
           state.selection match {
             case Some(t) =>
               t.parent match {
@@ -186,7 +185,7 @@ class ScreenMain extends ScreenBase {
               }
             case _ =>
           }
-        case Keys.D => // delete an item
+        case 'd' => // delete an item
           state.selection match {
             case Some(t) =>
               t.parent match {
@@ -198,7 +197,7 @@ class ScreenMain extends ScreenBase {
               }
             case None =>
           }
-        case Keys.P => // paste an item
+        case 'p' => // paste an item
           state.selection match {
             case Some(t) =>
               state.clipboard match {
@@ -210,18 +209,9 @@ class ScreenMain extends ScreenBase {
               }
             case None =>
           }
+        case _ =>
       }
       true
-    } else {
-      false
-    }
-
-    override def keyTyped(character: Char) = if (state.isInsert) {
-      assert(state.selection.isDefined)
-      val selected = state.selection.get
-      true
-    } else {
-      false
     }
 
 
