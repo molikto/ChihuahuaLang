@@ -35,32 +35,31 @@ class ScreenMain extends ScreenBase {
     */
 
 
-
   case class SyntaxSort(name: String, var forms: Seq[SyntaxForm] /* var only to construct cyclic reference */)
-  case class SyntaxForm(name: String, command: String, specs: Seq[SyntaxSort] = Seq.empty)
-  case class Language(root: SyntaxSort)
+
+  case class SyntaxForm(command: String, specs: Seq[SyntaxSort] = Seq.empty)
+
+  case class Language(sorts: Seq[SyntaxSort], forms: Seq[SyntaxForm])
 
   object UAE {
 
     val Term = SyntaxSort("term", null)
 
-    val True = SyntaxForm("true", "true")
-    val False = SyntaxForm("false", "false")
-    val IfThenElse = SyntaxForm("if $1 then $2 else $3", "if", Seq(Term, Term, Term))
-    val Zero = SyntaxForm("0", "0")
-    val Succ = SyntaxForm("succ $1", "succ", Seq(Term))
-    val Pred = SyntaxForm("pred $1", "pred", Seq(Term))
-    val IsZero  = SyntaxForm("iszero $1", "iszero", Seq(Term))
+    val True = SyntaxForm("true")
+    val False = SyntaxForm("false")
+    val IfThenElse = SyntaxForm("if", Seq(Term, Term, Term))
+    val Zero = SyntaxForm("0")
+    val Succ = SyntaxForm("succ", Seq(Term))
+    val Pred = SyntaxForm("pred", Seq(Term))
+    val IsZero = SyntaxForm("iszero", Seq(Term))
 
     Term.forms = Seq(True, False, IfThenElse, Zero, Succ, Pred)
 
-    val Lang = Language(Term)
+    val Lang = Language(Seq(Term), Term.forms)
   }
 
-  import UAE._
-
-
   class Tree(var content: Option[SyntaxForm]) {
+
     val childs: mutable.Buffer[Tree] = mutable.ArrayBuffer.empty
     var parent: Option[Tree] = None
 
@@ -72,10 +71,58 @@ class ScreenMain extends ScreenBase {
       cc
     }
 
+    def find(pred: Tree => Boolean): Option[Tree] = {
+      if (pred(this)) {
+        Some(this)
+      } else {
+        for (c <- childs) {
+          val res = c.find(pred)
+          if (res.nonEmpty) return res
+        }
+        None
+      }
+    }
+
+    def findSiblings(pred: Tree => Boolean): Option[Tree] = {
+      parent match {
+        case Some(p) =>
+          val i = p.childs.indexOf(this)
+          var k = i + 1
+          while (k < p.childs.size) {
+            val res = p.childs(k).find(pred)
+            if (res.nonEmpty) return res
+          }
+          None
+        case None =>
+          None
+      }
+
+    }
+
+    def findAfterThis(pred: Tree => Boolean): Option[Tree] = {
+      for (c <- childs) {
+        val res = c.find(pred)
+        if (res.nonEmpty) return res
+      }
+      var c = this
+      while (c.parent.nonEmpty) {
+        val res = c.findSiblings(pred)
+        if (res != null) return res
+        c = c.parent.get
+      }
+      None
+    }
+
     def copy(): Tree = copy(parent)
 
     def append(c: Tree) = {
       assert(c.parent.isEmpty)
+      c.parent = Some(this)
+      childs.append(c)
+    }
+
+    def appendNew() = {
+      val c = new Tree(None)
       c.parent = Some(this)
       childs.append(c)
     }
@@ -88,6 +135,7 @@ class ScreenMain extends ScreenBase {
   }
 
   object state {
+    val Lang = UAE.Lang
     val root = new Tree(None)
     var selection: Option[Tree] = Some(root)
     var isInsert = false
@@ -102,20 +150,52 @@ class ScreenMain extends ScreenBase {
   def drawTree(tree: Tree, left: Float, top: Float): Float = {
     val font = Roboto20
     var height = top
+    var placeholderText = ""
     if (state.selection.contains(tree)) {
-      val width = font.measure(if (tree.content.isEmpty) "?" else tree.content.get.name)
+      if (state.commandBuffer.nonEmpty) {
+        placeholderText = state.commandBuffer
+      } else if (tree.content.isEmpty) {
+        placeholderText = "?"
+      }
+      val width = font.measure(if (placeholderText.nonEmpty) placeholderText else tree.content.get.command)
       draw(left, height, width, font.height, SelectionColor)
+    } else if (tree.content.isEmpty) {
+      placeholderText = "?"
     }
-    if (tree.content.isEmpty) {
-      font.draw(left, height, "?", PlaceholderColor)
+    if (placeholderText.nonEmpty) {
+      font.draw(left, height, placeholderText, PlaceholderColor)
     } else {
-      font.draw(left, height, tree.content.get.name)
+      font.draw(left, height, tree.content.get.command)
     }
     height += font.lineHeight
     for (c <- tree.childs) {
       height = drawTree(c, left + ItemIndent, height)
     }
     height
+  }
+
+  def stateInsertAtNextHoleOrExit() = { // TODO make it better
+    val res = state.selection.get.findAfterThis(_.content.isEmpty)
+    if (res.nonEmpty) state.selection = res
+    else {
+      state.isInsert = false
+      state.commandBuffer = ""
+    }
+  }
+
+  def stateCommitCommand(): Unit = {
+    assert (state.selection.nonEmpty)
+    val selection = state.selection.get
+    assert (selection.content.isEmpty)
+    val command = state.commandBuffer
+    state.commandBuffer = ""
+    state.Lang.forms.find(_.command == command) match {
+      case Some(f) =>
+        selection.content = Some(f)
+        f.specs.foreach(_ => selection.appendNew())
+        stateInsertAtNextHoleOrExit()
+      case None =>
+    }
   }
 
   Gdx.input.setInputProcessor(new InputProcessor {
@@ -132,15 +212,35 @@ class ScreenMain extends ScreenBase {
 
     override def keyDown(keycode: Int) = false
 
-    override def keyUp(keycode: Int) = false
+    override def keyUp(keycode: Int) = {
+      if (state.isInsert) {
+        if (keycode == Keys.ESCAPE) {
+          state.isInsert = false
+          state.commandBuffer = ""
+          true
+        }
+      }
+      false
+    }
 
     override def keyTyped(character: Char) = if (state.isInsert) {
+      delog("key typed: " + Integer.toHexString(character.toInt))
       assert(state.selection.isDefined)
       val selected = state.selection.get
+      if (selected.content.isEmpty) {
+        if (character == ' ' || character == '\n') {
+          stateCommitCommand()
+        } else if (character == '\b') {
+          if (state.commandBuffer.nonEmpty) state.commandBuffer = state.commandBuffer.dropRight(1)
+        } else if (character >= '!' && character <= '~') {
+          // TODO valid commands and identifiers
+          state.commandBuffer = state.commandBuffer + character
+        }
+      }
       true
     } else {
       character match {
-        case 'i' =>  // enter insert mode
+        case 'i' => // enter insert mode
           state.isInsert = true
         case 'n' => // new empty node
           state.selection match {
