@@ -60,6 +60,7 @@ class ScreenMain extends ScreenBase {
 
   class Tree(var content: Option[SyntaxForm]) {
 
+    var commandBuffer = ""
     val childs: mutable.Buffer[Tree] = mutable.ArrayBuffer.empty
     var parent: Option[Tree] = None
 
@@ -91,6 +92,7 @@ class ScreenMain extends ScreenBase {
           while (k < p.childs.size) {
             val res = p.childs(k).find(pred)
             if (res.nonEmpty) return res
+            k += 1
           }
           None
         case None =>
@@ -140,7 +142,6 @@ class ScreenMain extends ScreenBase {
     var selection: Option[Tree] = Some(root)
     var isInsert = false
     var clipboard: Option[Tree] = None
-    var commandBuffer: String = ""
   }
 
   /**
@@ -150,17 +151,10 @@ class ScreenMain extends ScreenBase {
   def drawTree(tree: Tree, left: Float, top: Float): Float = {
     val font = Roboto20
     var height = top
-    var placeholderText = ""
+    var placeholderText = if (tree.commandBuffer.nonEmpty) tree.commandBuffer else if (tree.content.isEmpty) "?" else ""
     if (state.selection.contains(tree)) {
-      if (state.commandBuffer.nonEmpty) {
-        placeholderText = state.commandBuffer
-      } else if (tree.content.isEmpty) {
-        placeholderText = "?"
-      }
       val width = font.measure(if (placeholderText.nonEmpty) placeholderText else tree.content.get.command)
       draw(left, height, width, font.height, SelectionColor)
-    } else if (tree.content.isEmpty) {
-      placeholderText = "?"
     }
     if (placeholderText.nonEmpty) {
       font.draw(left, height, placeholderText, PlaceholderColor)
@@ -175,11 +169,11 @@ class ScreenMain extends ScreenBase {
   }
 
   def stateInsertAtNextHoleOrExit() = { // TODO make it better
+    state.selection.get.commandBuffer = ""
     val res = state.selection.get.findAfterThis(_.content.isEmpty)
     if (res.nonEmpty) state.selection = res
     else {
       state.isInsert = false
-      state.commandBuffer = ""
     }
   }
 
@@ -187,14 +181,18 @@ class ScreenMain extends ScreenBase {
     assert (state.selection.nonEmpty)
     val selection = state.selection.get
     assert (selection.content.isEmpty)
-    val command = state.commandBuffer
-    state.commandBuffer = ""
-    state.Lang.forms.find(_.command == command) match {
-      case Some(f) =>
-        selection.content = Some(f)
-        f.specs.foreach(_ => selection.appendNew())
-        stateInsertAtNextHoleOrExit()
-      case None =>
+    val command = selection.commandBuffer
+    selection.commandBuffer = ""
+    if (command.isEmpty) {
+      state.isInsert = false
+    } else {
+      state.Lang.forms.find(_.command == command) match {
+        case Some(f) =>
+          selection.content = Some(f)
+          f.specs.foreach(_ => selection.appendNew())
+          stateInsertAtNextHoleOrExit()
+        case None =>
+      }
     }
   }
 
@@ -215,9 +213,11 @@ class ScreenMain extends ScreenBase {
     override def keyUp(keycode: Int) = {
       if (state.isInsert) {
         if (keycode == Keys.ESCAPE) {
-          state.isInsert = false
-          state.commandBuffer = ""
-          true
+          if (state.selection.nonEmpty) {
+            state.isInsert = false
+            state.selection.get.commandBuffer = ""
+            true
+          }
         }
       }
       false
@@ -231,10 +231,10 @@ class ScreenMain extends ScreenBase {
         if (character == ' ' || character == '\n') {
           stateCommitCommand()
         } else if (character == '\b') {
-          if (state.commandBuffer.nonEmpty) state.commandBuffer = state.commandBuffer.dropRight(1)
+          if (selected.commandBuffer.nonEmpty) selected.commandBuffer = selected.commandBuffer.dropRight(1)
         } else if (character >= '!' && character <= '~') {
           // TODO valid commands and identifiers
-          state.commandBuffer = state.commandBuffer + character
+          selected.commandBuffer = selected.commandBuffer + character
         }
       }
       true
