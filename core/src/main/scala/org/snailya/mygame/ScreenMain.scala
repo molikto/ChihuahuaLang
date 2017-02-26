@@ -6,7 +6,7 @@ package org.snailya.mygame
 
 import MyGame._
 import MyGame.game._
-import com.badlogic.gdx.Gdx
+import com.badlogic.gdx.{Gdx, InputProcessor}
 import com.badlogic.gdx.Input.Keys
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.scenes.scene2d.ui.TextField
@@ -20,36 +20,59 @@ class ScreenMain extends ScreenBase {
   /**
     * style
     */
-  val BackgroundColor = new Color(0x2b303bFF)
-  val SelectionColor = new Color(0xFFFFFF33)
-  val PlaceholderColor = new Color(0xFFFFFF77)
+  object style {
+    val BackgroundColor = new Color(0x2b303bFF)
+    val SelectionColor = new Color(0xFFFFFF33)
+    val PlaceholderColor = new Color(0xFFFFFF77)
+    val Size8 = size(8)
+    val ItemIndent = size(20)
+  }
 
-  val Size8 = size(8)
+  import style._
 
-  val ItemIndent = size(20)
+  /**
+    * Keys
+    */
+
 
 
   case class SyntaxSort(name: String, var forms: Seq[SyntaxForm] /* var only to construct cyclic reference */)
-  val Term = SyntaxSort("term", null)
-
-  case class SyntaxForm(name: String, specs: Seq[SyntaxSort] = Seq.empty)
-  val True = SyntaxForm("true")
-  val False = SyntaxForm("false")
-  val IfThenElse = SyntaxForm("if $1 then $2 else $3", Seq(Term, Term, Term))
-  val Zero = SyntaxForm("0")
-  val Succ = SyntaxForm("succ $1", Seq(Term))
-  val Pred = SyntaxForm("pred $1", Seq(Term))
-  val IsZero  = SyntaxForm("iszero $1", Seq(Term))
-
-  Term.forms = Seq(True, False, IfThenElse, Zero, Succ, Pred)
-
+  case class SyntaxForm(name: String, command: String, specs: Seq[SyntaxSort] = Seq.empty)
   case class Language(root: SyntaxSort)
 
-  val UAE = Language(Term)
+  object UAE {
+
+    val Term = SyntaxSort("term", null)
+
+    val True = SyntaxForm("true", "true")
+    val False = SyntaxForm("false", "false")
+    val IfThenElse = SyntaxForm("if $1 then $2 else $3", "if", Seq(Term, Term, Term))
+    val Zero = SyntaxForm("0", "0")
+    val Succ = SyntaxForm("succ $1", "succ", Seq(Term))
+    val Pred = SyntaxForm("pred $1", "pred", Seq(Term))
+    val IsZero  = SyntaxForm("iszero $1", "iszero", Seq(Term))
+
+    Term.forms = Seq(True, False, IfThenElse, Zero, Succ, Pred)
+
+    val Lang = Language(Term)
+  }
+
+  import UAE._
+
 
   class Tree(var content: Option[SyntaxForm]) {
     val childs: mutable.Buffer[Tree] = mutable.ArrayBuffer.empty
     var parent: Option[Tree] = None
+
+
+    def copy(p: Option[Tree]): Tree = {
+      val cc = new Tree(content)
+      cc.parent = p
+      cc.childs ++= childs.map(t => t.copy(Some(cc)))
+      cc
+    }
+
+    def copy(): Tree = copy(parent)
 
     def append(c: Tree) = {
       assert(c.parent.isEmpty)
@@ -68,18 +91,23 @@ class ScreenMain extends ScreenBase {
     val root = new Tree(None)
     var selection: Option[Tree] = Some(root)
     var isInsert = false
-    var debugText = 0
     var clipboard: Option[Tree] = None
+    var commandBuffer: String = ""
+  }
 
-    def newName() = {
-      debugText += 1
-      debugText.toString
-    }
+  /**
+    * UI
+    */
 
+  val hackTextField: TextField = {
+    val ts = new TextFieldStyle()
+    ts.font = Roboto20.internal
+    ts.fontColor = Color.WHITE
+    new TextField("", ts)
   }
 
   def drawTree(tree: Tree, left: Float, top: Float): Float = {
-    var font = Roboto20
+    val font = Roboto20
     var height = top
     if (state.selection.contains(tree)) {
       val width = font.measure(if (tree.content.isEmpty) "?" else tree.content.get.name)
@@ -97,83 +125,113 @@ class ScreenMain extends ScreenBase {
     height
   }
 
-  override def render(delta: Float) = {
-    if (!state.isInsert) {
-      if (Gdx.input.isKeyJustPressed(Keys.U)) {
-        state.isInsert = true
-      } else if (Gdx.input.isKeyJustPressed(Keys.N)) {
-        state.selection match {
-          case Some(t) =>
-            val c = new Tree(Some(randomItem(Term.forms)))
-            t.append(c)
-            state.selection = Some(c)
-          case None =>
-        }
-      } else if (Gdx.input.isKeyJustPressed(Keys.I)) {
-        state.selection match {
-          case Some(t) =>
-            state.selection = t.parent
-          case _ =>
-        }
-      } else if (Gdx.input.isKeyJustPressed(Keys.K)) {
-        state.selection match {
-          case Some(t) =>
-            if (t.childs.nonEmpty) state.selection = Some(t.childs.head)
-          case _ => state.selection = Some(state.root)
-        }
-      } else if (Gdx.input.isKeyJustPressed(Keys.L)) {
-        state.selection match {
-          case Some(t) =>
-            t.parent match {
-              case Some(p) =>
-                val selection = Math.min(p.childs.indexOf(t) + 1, p.childs.size - 1)
-                state.selection = Some(p.childs(selection))
-              case None =>
-            }
-          case _ =>
-        }
-      } else if (Gdx.input.isKeyJustPressed(Keys.J)) {
-        state.selection match {
-          case Some(t) =>
-            t.parent match {
-              case Some(p) =>
-                val selection = Math.max(p.childs.indexOf(t) - 1, 0)
-                state.selection = Some(p.childs(selection))
-              case None =>
-            }
-          case _ =>
-        }
-      } else if (Gdx.input.isKeyJustPressed(Keys.D)) {
-        state.selection match {
-          case Some(t) =>
-            t.parent match {
-              case Some(p) =>
-                state.selection = Some(p)
-                p.remove(t)
-                state.clipboard = Some(t)
-              case None =>
-            }
-          case None =>
-        }
-      } else if (Gdx.input.isKeyJustPressed(Keys.P)) {
-        state.selection match {
-          case Some(t) =>
-            state.clipboard match {
-              case Some(c) =>
-                t.append(c)
-                state.selection = Some(c)
-              case None =>
-            }
-          case None =>
-        }
+  Gdx.input.setInputProcessor(new InputProcessor {
+
+    override def touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int) = false
+
+    override def mouseMoved(screenX: Int, screenY: Int) = false
+
+    override def touchUp(screenX: Int, screenY: Int, pointer: Int, button: Int) = false
+
+    override def touchDragged(screenX: Int, screenY: Int, pointer: Int) = false
+
+    override def scrolled(amount: Int) = false
+
+    override def keyDown(keycode: Int) = false
+
+    override def keyUp(keycode: Int) = if (!state.isInsert) {
+      keycode match {
+        case Keys.I =>  // enter insert mode
+          state.isInsert = true
+        case Keys.N => // new empty node
+          state.selection match {
+            case Some(t) =>
+              val c = new Tree(None)
+              t.append(c)
+              state.selection = Some(c)
+            case None =>
+          }
+        case Keys.K => // go to parent
+          state.selection match {
+            case Some(t) =>
+              state.selection = t.parent
+            case _ =>
+          }
+        case Keys.J => // go to first child
+          state.selection match {
+            case Some(t) =>
+              if (t.childs.nonEmpty) state.selection = Some(t.childs.head)
+            case _ => state.selection = Some(state.root)
+
+          }
+        case Keys.L => // go to next sibling
+          state.selection match {
+            case Some(t) =>
+              t.parent match {
+                case Some(p) =>
+                  val selection = Math.min(p.childs.indexOf(t) + 1, p.childs.size - 1)
+                  state.selection = Some(p.childs(selection))
+                case None =>
+              }
+            case _ =>
+          }
+        case Keys.H => // go to previous sibling
+          state.selection match {
+            case Some(t) =>
+              t.parent match {
+                case Some(p) =>
+                  val selection = Math.max(p.childs.indexOf(t) - 1, 0)
+                  state.selection = Some(p.childs(selection))
+                case None =>
+              }
+            case _ =>
+          }
+        case Keys.D => // delete an item
+          state.selection match {
+            case Some(t) =>
+              t.parent match {
+                case Some(p) =>
+                  state.selection = Some(p)
+                  p.remove(t)
+                  state.clipboard = Some(t)
+                case None =>
+              }
+            case None =>
+          }
+        case Keys.P => // paste an item
+          state.selection match {
+            case Some(t) =>
+              state.clipboard match {
+                case Some(c) =>
+                  val cc = c.copy()
+                  t.append(cc)
+                  state.selection = Some(cc)
+                case None =>
+              }
+            case None =>
+          }
       }
+      true
     } else {
+      false
+    }
+
+    override def keyTyped(character: Char) = if (state.isInsert) {
       assert(state.selection.isDefined)
       val selected = state.selection.get
+      true
+    } else {
+      false
     }
+
+
+  })
+
+  override def render(delta: Float) = {
     clearColor(BackgroundColor)
     begin()
     drawTree(state.root, Size8, Size8)
+    delog("redrawn")
     end()
   }
 }
