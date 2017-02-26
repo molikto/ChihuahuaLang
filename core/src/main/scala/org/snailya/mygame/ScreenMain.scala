@@ -53,7 +53,7 @@ class ScreenMain extends ScreenBase {
     val Pred = SyntaxForm("pred", Seq(Term))
     val IsZero = SyntaxForm("iszero", Seq(Term))
 
-    Term.forms = Seq(True, False, IfThenElse, Zero, Succ, Pred)
+    Term.forms = Seq(True, False, IfThenElse, Zero, Succ, Pred, IsZero)
 
     val Lang = Language(Seq(Term), Term.forms)
   }
@@ -245,9 +245,11 @@ class ScreenMain extends ScreenBase {
         case 'n' => // new empty node
           state.selection match {
             case Some(t) =>
-              val c = new Tree(None)
-              t.append(c)
-              state.selection = Some(c)
+              if (t.content.nonEmpty) {
+                val c = new Tree(None)
+                t.append(c)
+                state.selection = Some(c)
+              }
             case None =>
           }
         case 'k' => // go to parent
@@ -288,12 +290,19 @@ class ScreenMain extends ScreenBase {
         case 'd' => // delete an item
           state.selection match {
             case Some(t) =>
-              t.parent match {
-                case Some(p) =>
-                  state.selection = Some(p)
-                  p.remove(t)
-                  state.clipboard = Some(t)
-                case None =>
+              if (t.childs.nonEmpty || t.content.nonEmpty) {
+                val tt = new Tree(t.content)
+                tt.childs ++= t.childs
+                state.clipboard = Some(tt)
+                t.content = None
+                t.childs.clear()
+              } else {
+                t.parent match {
+                  case Some(p) =>
+                    p.remove(t)
+                    state.selection = Some(p)
+                  case None =>
+                }
               }
             case None =>
           }
