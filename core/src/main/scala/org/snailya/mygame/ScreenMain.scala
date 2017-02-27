@@ -49,9 +49,11 @@ class ScreenMain extends ScreenBase {
 
   case class SyntaxSort(name: String, var forms: Seq[SyntaxForm] /* var only to construct cyclic reference */)
 
-  case class SyntaxForm(command: Command, specs: Seq[SyntaxSort], transformer: LayoutTransformer)
+  case class SyntaxForm(command: Command, specs: Seq[SyntaxSort], toLayout: ToLayout)
 
-  case class Language(sorts: Seq[SyntaxSort], forms: Seq[SyntaxForm])
+  case class Language(sorts: Seq[SyntaxSort], forms: Seq[SyntaxForm]) {
+
+  }
 
   abstract class Widget() {
 
@@ -83,7 +85,7 @@ class ScreenMain extends ScreenBase {
     }
   }
 
-  case class LayoutTransformer(cap: Int, fun: Seq[Widget] => Widget)
+  case class ToLayout(cap: Int, fun: Seq[Widget] => Widget)
 
   abstract class WIndentAbs extends Widget {
     override def measure0(t: Tree) = {
@@ -168,9 +170,9 @@ class ScreenMain extends ScreenBase {
   }
 
   object layouts {
-    val Inline1 = LayoutTransformer(0, seq => WCommand())
-    val Inline2 = LayoutTransformer(1, seq => WSequence(WCommand(), WConstant(" "), seq.head))
-    val Default = LayoutTransformer(-1, seq => WVertical(seq: _*))
+    val Inline1 = ToLayout(0, seq => WCommand())
+    val Inline2 = ToLayout(1, seq => WSequence(WCommand(), WConstant(" "), seq.head))
+    val Default = ToLayout(-1, seq => WVertical(seq: _*))
   }
 
 
@@ -183,7 +185,7 @@ class ScreenMain extends ScreenBase {
     val True = SyntaxForm1("true")
     val False = SyntaxForm1("false")
     val IfThenElse = SyntaxForm(ConstantCommand("if"), Seq(Term, Term, Term),
-      LayoutTransformer(3, (seq) => {
+      ToLayout(3, (seq) => {
         WVertical(
           WSequence(WCommand(), WConstant(" "), seq(0)),
           WSequence(WIndent, seq(1)),
@@ -228,7 +230,7 @@ class ScreenMain extends ScreenBase {
     def measure(widthHint: Float): Unit = {
       // TODO not used now
       commandLayout = null
-      val transformer = content.map(_.transformer).getOrElse(layouts.Inline1)
+      val transformer = content.map(_.toLayout).getOrElse(layouts.Inline1)
       val cwidgets = childs.map(a => {
         a.measure(widthHint)
         a.layout
@@ -524,7 +526,7 @@ class ScreenMain extends ScreenBase {
               }
               t.parent match {
                 case Some(p) =>
-                  val cap = p.content.map(_.transformer.cap).getOrElse(-1)
+                  val cap = p.content.map(_.toLayout.cap).getOrElse(-1)
                   if (p.childs.size == cap) p.appendNew()
                   p.remove(t)
                   state.selection = Some(p)
