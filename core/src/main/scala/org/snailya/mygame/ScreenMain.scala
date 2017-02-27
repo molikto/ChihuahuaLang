@@ -24,6 +24,7 @@ class ScreenMain extends ScreenBase {
   object style {
     val BackgroundColor = new Color(0x2b303bFF)
     val SelectionColor = new Color(0xFFFFFF33)
+    val EditingColor = new Color(0xe3322d99)
     val PlaceholderColor = new Color(0xFFFFFF77)
     val Size8 = size(8)
     val ItemIndent = size(20)
@@ -49,6 +50,7 @@ class ScreenMain extends ScreenBase {
     var width = 0f
     var height = 0f
     var measured: Boolean = false
+    var bg: Color = null // this is set after the draw call
 
     def measure(t: Tree, x: Float, y: Float) = {
       this.x = x
@@ -59,7 +61,7 @@ class ScreenMain extends ScreenBase {
       }
     }
 
-    def draw(px: Float, py: Float)
+    def draw(px: Float, py: Float) = if (bg != null) drawColor(px + x, py + y, width, height, bg)
 
 
     def measure0(tree: Tree)
@@ -73,15 +75,13 @@ class ScreenMain extends ScreenBase {
 
   case class LayoutTransformer(cap: Int, fun: Seq[Widget] => Widget)
 
-  case object LIndent extends Widget {
+  case object WIndent extends Widget {
     override def measure0(t: Tree) = {
       width = ItemIndent
       height = Font.lineHeight
     }
-
-    override def draw(px: Float, py: Float) = {}
   }
-  case class LSequence(seq: Widget*) extends Widget {
+  case class WSequence(seq: Widget*) extends Widget {
     override def measure0(tree: Tree) = {
       var x = 0f
       for (s <- seq) {
@@ -92,9 +92,12 @@ class ScreenMain extends ScreenBase {
       height = seq.map(_.height).max
     }
 
-    override def draw(px: Float, py: Float) = drawChildren(px, py, this, seq: _*)
+    override def draw(px: Float, py: Float) = {
+      super.draw(px, py)
+      drawChildren(px, py, this, seq: _*)
+    }
   }
-  case class LVertical(seq: Widget*) extends Widget {
+  case class WVertical(seq: Widget*) extends Widget {
     override def measure0(tree: Tree) = {
       var y = 0f
       for (s <- seq) {
@@ -105,10 +108,13 @@ class ScreenMain extends ScreenBase {
       width = seq.map(_.width).max
     }
 
-    override def draw(px: Float, py: Float) = drawChildren(px, py, this, seq: _*)
+    override def draw(px: Float, py: Float) = {
+      super.draw(px, py)
+      drawChildren(px, py, this, seq: _*)
+    }
   }
 
-  abstract class LGlyph() extends Widget {
+  abstract class WGlyph() extends Widget {
     var gl: GlyphLayout = null
     var text: String = null
     var color: Color = Color.WHITE
@@ -120,17 +126,19 @@ class ScreenMain extends ScreenBase {
       height = Font.lineHeight
     }
 
-    override def draw(px: Float, py: Float) = Font.draw(px + x, py + y, text, color)
+    override def draw(px: Float, py: Float) = {
+      super.draw(px, py)
+      Font.draw(px + x, py + y, text, color)
+    }
   }
 
-  case class DConstant(c: String) extends LGlyph {
+  case class WConstant(c: String) extends WGlyph {
     override def measure0(tree: Tree) = measure0(c)
   }
 
-  case class LCommand() extends LGlyph {
+  case class WCommand() extends WGlyph {
 
 
-    var bg: Color = null // this is set after the draw call
 
     override def measure0(tree: Tree) = {
       tree.commandLayout = this
@@ -141,19 +149,16 @@ class ScreenMain extends ScreenBase {
       } else tree.content.get.command
       measure0(text)
     }
-
-    override def draw(px: Float, py: Float) = {
-      if (bg != null) drawColor(px + x, py + y, width, height, SelectionColor)
-      super.draw(px, py)
-    }
   }
 
-  val LayoutInline1 = LayoutTransformer(0, seq => LCommand())
-  val LayoutInline2 = LayoutTransformer(1, seq => LSequence(LCommand(), seq.head))
-  val LayoutDefault = LayoutTransformer(-1, seq => LVertical(seq: _*))
+  object layouts {
+    val Inline1 = LayoutTransformer(0, seq => WCommand())
+    val Inline2 = LayoutTransformer(1, seq => WSequence(WCommand(), WConstant(" "), seq.head))
+    val Default = LayoutTransformer(-1, seq => WVertical(seq: _*))
+  }
 
-  def SyntaxForm1(name: String) = SyntaxForm(name, Seq.empty, LayoutInline1)
-  def SyntaxForm2(name: String, c: SyntaxSort) = SyntaxForm(name, Seq(c), LayoutInline2)
+  def SyntaxForm1(name: String) = SyntaxForm(name, Seq.empty, layouts.Inline1)
+  def SyntaxForm2(name: String, c: SyntaxSort) = SyntaxForm(name, Seq(c), layouts.Inline2)
 
   object UAE {
 
@@ -163,11 +168,11 @@ class ScreenMain extends ScreenBase {
     val False = SyntaxForm1("false")
     val IfThenElse = SyntaxForm("if", Seq(Term, Term, Term),
       LayoutTransformer(3, (seq) => {
-        LVertical(
-          LSequence(LCommand(),  seq(0)),
-          LSequence(LIndent, seq(1)),
-          DConstant("else"),
-          LSequence(LIndent, seq(2))
+        WVertical(
+          WSequence(WCommand(), WConstant(" "),  seq(0)),
+          WSequence(WIndent, seq(1)),
+          WConstant("else"),
+          WSequence(WIndent, seq(2))
         )
       })
     )
@@ -188,20 +193,20 @@ class ScreenMain extends ScreenBase {
     var parent: Option[Tree] = None
 
     var width, height: Float = 0
-    var commandLayout: LCommand = null
+    var commandLayout: WCommand = null
+    var layout: Widget = null
 
-    def measure(widthHint: Float): Widget = {
+    def measure(widthHint: Float): Unit = { // TODO not used now
       commandLayout = null
       val transformer = content.map(_.transformer).getOrElse(LayoutInline1)
-      val cwidgets = childs.map(a => {a.measure(widthHint)})
-      var layout = transformer.fun(cwidgets)
+      val cwidgets = childs.map(a => {a.measure(widthHint); a.layout})
+      layout = transformer.fun(cwidgets)
       if (transformer.cap >= 0 && transformer.cap < childs.size) {
         layout = LayoutDefault.fun(Seq(layout) ++ cwidgets.drop(transformer.cap))
       }
       // this will measure the rest of the elements just created by the transformer
       // also one child might set the command layout property
       layout.measure(this, 0, 0)
-      layout
     }
 
     def copy(p: Option[Tree]): Tree = {
@@ -300,7 +305,7 @@ class ScreenMain extends ScreenBase {
     }
   }
 
-  def stateCommitCommand(): Unit = {
+  def stateCommitCommand(jump: Boolean): Unit = {
     assert (state.selection.nonEmpty)
     val selection = state.selection.get
     assert (selection.content.isEmpty)
@@ -313,7 +318,7 @@ class ScreenMain extends ScreenBase {
         case Some(f) =>
           selection.content = Some(f)
           f.specs.foreach(_ => selection.appendNew())
-          stateInsertAtNextHoleOrExit()
+          if (jump) stateInsertAtNextHoleOrExit()
         case None =>
       }
     }
@@ -337,6 +342,7 @@ class ScreenMain extends ScreenBase {
       if (state.isInsert) {
         if (keycode == Keys.ESCAPE) {
           if (state.selection.nonEmpty) {
+            if (state.selection.get.content.isEmpty) stateCommitCommand(false)
             state.isInsert = false
             state.selection.get.commandBuffer = ""
             true
@@ -352,7 +358,7 @@ class ScreenMain extends ScreenBase {
       val selected = state.selection.get
       if (selected.content.isEmpty) {
         if (character == ' ' || character == '\n') {
-          stateCommitCommand()
+          stateCommitCommand(true)
         } else if (character == '\b') {
           if (selected.commandBuffer.nonEmpty) selected.commandBuffer = selected.commandBuffer.dropRight(1)
         } else if (character >= '!' && character <= '~') {
@@ -364,7 +370,7 @@ class ScreenMain extends ScreenBase {
     } else {
       character match {
         case 'i' => // enter insert mode
-          state.isInsert = true
+          if (state.selection.isDefined) state.isInsert = true
         case 'n' => // new empty node
           state.selection match {
             case Some(t) =>
@@ -419,13 +425,14 @@ class ScreenMain extends ScreenBase {
                 state.clipboard = Some(tt)
                 t.content = None
                 t.childs.clear()
-              } else {
-                t.parent match {
-                  case Some(p) =>
-                    p.remove(t)
-                    state.selection = Some(p)
-                  case None =>
-                }
+              }
+              t.parent match {
+                case Some(p) =>
+                  val cap = p.content.map(_.transformer.cap).getOrElse(-1)
+                  if (p.childs.size == cap) p.appendNew()
+                  p.remove(t)
+                  state.selection = Some(p)
+                case None =>
               }
             case None =>
           }
@@ -452,12 +459,16 @@ class ScreenMain extends ScreenBase {
 
 
   override def render(delta: Float) = {
+    var t = System.nanoTime()
     clearColor(BackgroundColor)
     begin()
-    val layout = state.root.measure(screenPixelWidth - Size8 * 2)
-    state.selection.foreach(a => a.commandLayout.bg = SelectionColor)
-    layout.draw(Size8, Size8)
-    delog("redrawn")
+    state.root.measure(screenPixelWidth - Size8 * 2)
+    state.selection.foreach(a => {
+      a.layout.bg = SelectionColor
+      a.commandLayout.bg = if (state.isInsert) EditingColor else SelectionColor
+    })
+    state.root.layout.draw(Size8, Size8)
+    delog("redrawn " + (System.nanoTime() - t) / 1000000 + "ms")
     end()
   }
 }
