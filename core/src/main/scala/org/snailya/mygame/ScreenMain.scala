@@ -25,6 +25,7 @@ class ScreenMain extends ScreenBase {
     val BackgroundColor = new Color(0x2b303bFF)
     val SelectionColor = new Color(0xFFFFFF33)
     val EditingColor = new Color(0xe3322d99)
+    val ErrorColor = new Color(0xe3322d99)
     val PlaceholderColor = new Color(0xFFFFFF77)
     val Size8 = size(8)
     val ItemIndent = size(20)
@@ -84,11 +85,16 @@ class ScreenMain extends ScreenBase {
 
   case class LayoutTransformer(cap: Int, fun: Seq[Widget] => Widget)
 
-  case object WIndent extends Widget {
+  abstract class WIndentAbs extends Widget {
     override def measure0(t: Tree) = {
       width = ItemIndent
       height = Font.lineHeight
     }
+  }
+  object WIndent extends WIndentAbs
+
+  case object WExtraParameters extends WIndentAbs {
+    bg = ErrorColor
   }
 
   case class WSequence(seq: Widget*) extends Widget {
@@ -172,10 +178,8 @@ class ScreenMain extends ScreenBase {
 
   def SyntaxForm2(name: String, c: SyntaxSort) = SyntaxForm(ConstantCommand(name), Seq(c), layouts.Inline2)
 
-  object UAE {
-
+  object UntypedArithmetic {
     val Term = SyntaxSort("term", null)
-
     val True = SyntaxForm1("true")
     val False = SyntaxForm1("false")
     val IfThenElse = SyntaxForm(ConstantCommand("if"), Seq(Term, Term, Term),
@@ -188,24 +192,36 @@ class ScreenMain extends ScreenBase {
         )
       })
     )
-    val Zero = SyntaxForm1("0")
     val Succ = SyntaxForm2("succ", Term)
     val Pred = SyntaxForm2("pred", Term)
     val IsZero = SyntaxForm2("iszero", Term)
-
-    Term.forms = Seq(True, False, IfThenElse, Zero, Succ, Pred, IsZero)
-
+    def isPositiveNumber(s: String) = {
+      s.length > 0 && s.forall(a => "0123456789".contains(a))
+    }
+    def isNumber(s: String): Boolean = {
+      if (s.startsWith("-")) isPositiveNumber(s.substring(1))
+      else isPositiveNumber(s)
+    }
+    val Number = SyntaxForm(AcceptanceCommand(isNumber), Seq(), layouts.Inline1)
+    Term.forms = Seq(True, False, IfThenElse, Number, Succ, Pred, IsZero)
     val Lang = Language(Seq(Term), Term.forms)
+  }
+
+  object UntypedLambdaCalculus {
+
   }
 
   class Tree(var content: Option[SyntaxForm]) {
 
     var command: String = ""
-    var commandBuffer = ""
     val childs: mutable.Buffer[Tree] = mutable.ArrayBuffer.empty
+
     var parent: Option[Tree] = None
 
-    var width, height: Float = 0
+    // reset each time go out insert mode
+    var commandBuffer = ""
+
+    // reset each time re-render
     var commandLayout: WCommand = null
     var layout: Widget = null
 
@@ -219,16 +235,39 @@ class ScreenMain extends ScreenBase {
       })
       layout = transformer.fun(cwidgets)
       if (transformer.cap >= 0 && transformer.cap < childs.size) {
-        layout = layouts.Default.fun(Seq(layout) ++ cwidgets.drop(transformer.cap))
+        layout = layouts.Default.fun(Seq(layout, WSequence(WExtraParameters, WVertical(cwidgets.drop(transformer.cap): _*))))
       }
       // this will measure the rest of the elements just created by the transformer
       // also one child might set the command layout property
       layout.measure(this, 0, 0)
     }
 
+
+    def copyContent(c: Tree): Unit = {
+      childs.clear()
+      for (cc <- c.childs) {
+        cc.parent = None
+        append(cc)
+      }
+      c.childs.clear()
+      content = c.content
+      command = c.command
+    }
+
+    def moveContentOut(): Tree = {
+      val cc = new Tree(content)
+      content = None
+      cc.command = this.command
+      this.command = ""
+      cc.childs ++= childs.map(t => t.copy(Some(cc)))
+      childs.clear()
+      cc
+    }
+
     def copy(p: Option[Tree]): Tree = {
       val cc = new Tree(content)
       cc.parent = p
+      cc.command = this.command
       cc.childs ++= childs.map(t => t.copy(Some(cc)))
       cc
     }
@@ -320,7 +359,7 @@ class ScreenMain extends ScreenBase {
   }
 
   object state {
-    val Lang = UAE.Lang
+    val Lang = UntypedArithmetic.Lang
     val root = new Tree(None)
     var selection: Option[Tree] = Some(root)
     var isInsert = false
@@ -478,11 +517,10 @@ class ScreenMain extends ScreenBase {
           case 'd' => // delete an item
             state.selection.foreach(t => {
               if (t.childs.nonEmpty || t.content.nonEmpty) {
-                val tt = new Tree(t.content)
-                tt.childs ++= t.childs
-                state.clipboard = Some(tt)
+                val tt = t.moveContentOut()
                 t.content = None
                 t.childs.clear()
+                state.clipboard = Some(tt)
               }
               t.parent match {
                 case Some(p) =>
@@ -497,9 +535,13 @@ class ScreenMain extends ScreenBase {
             state.selection.foreach(t => {
               state.clipboard match {
                 case Some(c) =>
-                  val cc = c.copy()
-                  t.append(cc)
-                  state.selection = Some(cc)
+                  if (t.content.isEmpty && t.childs.isEmpty) {
+                    t.copyContent(c)
+                  } else {
+                    val cc = c.copy()
+                    t.append(cc)
+                    state.selection = Some(cc)
+                  }
                 case None =>
               }
             })
@@ -523,6 +565,7 @@ class ScreenMain extends ScreenBase {
         a.layout.bg = SelectionColor
         a.commandLayout.bg = if (state.isInsert) EditingColor else SelectionColor
       })
+      state.root.ast()
       state.root.layout.draw(Size8, Size8)
       delog("redrawn " + (System.nanoTime() - t) / 1000000 + "ms")
       end()
