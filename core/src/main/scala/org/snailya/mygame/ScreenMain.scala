@@ -37,21 +37,106 @@ class ScreenMain extends ScreenBase {
 
   case class SyntaxSort(name: String, var forms: Seq[SyntaxForm] /* var only to construct cyclic reference */)
 
-  case class SyntaxForm(command: String, specs: Seq[SyntaxSort] = Seq.empty)
+  case class SyntaxForm(command: String, specs: Seq[SyntaxSort], transformer: LayoutTransformer)
 
   case class Language(sorts: Seq[SyntaxSort], forms: Seq[SyntaxForm])
+
+  abstract class Widget() {
+    var x = 0f
+    var y = 0f
+    var width = 0f
+    var height = 0f
+    var tree: Tree = null // this means this is a direct element attached to a tree
+
+    def measure(t: Tree, x: Float, y: Float) = {
+      if (this.tree == null) {
+        this.tree = t
+        this.x = x
+        this.y = y
+        measure0()
+      }
+    }
+
+    def measure0()
+  }
+
+  type LayoutTransformer = Seq[Widget] => Widget
+
+  case object LIndent extends Widget {
+    override def measure0() = {
+      width = ItemIndent
+      height = Font.lineHeight
+    }
+  }
+  case class LSequence(seq: Widget*) extends Widget {
+    override def measure0() = {
+      var x = this.x
+      for (s <- seq) {
+        s.measure(tree, x, 0)
+        x += s.width
+      }
+      width = x
+      height = seq.map(_.height).max
+    }
+  }
+  case class LVertical(seq: Widget*) extends Widget {
+    override def measure0(tree: Tree) = {
+      var y = 0
+      for (s <- seq) {
+        s.measure(tree, 0, y)
+        y += s.height
+      }
+      height = y
+      width = seq.map(_.width).max
+    }
+  }
+  case class DConstant(c: String) extends Widget {
+    override def measure0(tree: Tree) = {
+      width = Font.measure(c)
+      height = Font.lineHeight
+    }
+  }
+  case class LCommand() extends Widget {
+
+    var text: String = null
+    var color: Color = null
+
+    override def measure0(tree: Tree) = {
+      tree.layout
+      val placeholderText = if (tree.commandBuffer.nonEmpty) tree.commandBuffer else if (tree.content.isEmpty) "?" else ""
+      text = if (placeholderText.nonEmpty) placeholderText else tree.content.get.command
+      width = Font.measure(text)
+      height = Font.lineHeight
+    }
+  }
+
+  val LayoutInline1: LayoutTransformer = seq => LCommand()
+  val LayoutInline2: LayoutTransformer = seq => LSequence(LCommand(), seq(0))
+  val LayoutDefault: LayoutTransformer = seq => LVertical(seq)
+
+  def SyntaxForm1(name: String) = SyntaxForm(name, Seq.empty, LayoutInline1)
+  def SyntaxForm2(name: String, c: SyntaxSort) = SyntaxForm(name, Seq(c), LayoutInline2)
 
   object UAE {
 
     val Term = SyntaxSort("term", null)
 
-    val True = SyntaxForm("true")
-    val False = SyntaxForm("false")
-    val IfThenElse = SyntaxForm("if", Seq(Term, Term, Term))
-    val Zero = SyntaxForm("0")
-    val Succ = SyntaxForm("succ", Seq(Term))
-    val Pred = SyntaxForm("pred", Seq(Term))
-    val IsZero = SyntaxForm("iszero", Seq(Term))
+    val True = SyntaxForm1("true")
+    val False = SyntaxForm1("false")
+    val IfThenElse = SyntaxForm("if", Seq(Term, Term, Term),
+      (seq) => {
+        LVertical(
+          LSequence(LCommand(), seq(0)),
+          LSequence(LIndent, seq(1)),
+          DConstant("else"),
+          LSequence(LIndent, seq(2))
+        )
+      }
+    )
+    val Zero = SyntaxForm1("0")
+    val Succ = SyntaxForm2("succ", Term)
+    val Pred = SyntaxForm2("pred", Term)
+    val IsZero = SyntaxForm2("iszero", Term)
 
     Term.forms = Seq(True, False, IfThenElse, Zero, Succ, Pred, IsZero)
 
@@ -64,6 +149,24 @@ class ScreenMain extends ScreenBase {
     val childs: mutable.Buffer[Tree] = mutable.ArrayBuffer.empty
     var parent: Option[Tree] = None
 
+    var width, height: Float = 0
+    var layout: Widget = null // we use null means that it is NOT measured
+    var commandLayout: Widget = null
+
+    /**
+      * this will fill in the width, height of a widget... that's it
+      * no wrapping
+      */
+    def measure(widthHint: Float): Unit = {
+      layout = null
+      commandLayout = null
+      val transformer = content.map(_.transformer).getOrElse(LayoutDefault)
+      // this will give us a layout where the childs is all properly measured and attached to a tree
+      layout = transformer(childs.map(a => {a.measure(widthHint); a.layout}))
+      // this will measure the rest of the elements just created by the transformer
+      // also one child might set the command layout property
+      layout.measure(this, 0, 0)
+    }
 
     def copy(p: Option[Tree]): Tree = {
       val cc = new Tree(content)
@@ -148,20 +251,21 @@ class ScreenMain extends ScreenBase {
     * UI
     */
 
+  val Font = Roboto20
+
   def drawTree(tree: Tree, left: Float, top: Float): Float = {
-    val font = Roboto20
     var height = top
     var placeholderText = if (tree.commandBuffer.nonEmpty) tree.commandBuffer else if (tree.content.isEmpty) "?" else ""
     if (state.selection.contains(tree)) {
-      val width = font.measure(if (placeholderText.nonEmpty) placeholderText else tree.content.get.command)
-      draw(left, height, width, font.height, SelectionColor)
+      val width = Font.measure(if (placeholderText.nonEmpty) placeholderText else tree.content.get.command)
+      draw(left, height, width, Font.height, SelectionColor)
     }
     if (placeholderText.nonEmpty) {
-      font.draw(left, height, placeholderText, PlaceholderColor)
+      Font.draw(left, height, placeholderText, PlaceholderColor)
     } else {
-      font.draw(left, height, tree.content.get.command)
+      Font.draw(left, height, tree.content.get.command)
     }
-    height += font.lineHeight
+    height += Font.lineHeight
     for (c <- tree.childs) {
       height = drawTree(c, left + ItemIndent, height)
     }
@@ -326,9 +430,12 @@ class ScreenMain extends ScreenBase {
 
   })
 
+
+
   override def render(delta: Float) = {
     clearColor(BackgroundColor)
     begin()
+    state.root.measure(screenPixelWidth - Size8 * 2)
     drawTree(state.root, Size8, Size8)
     delog("redrawn")
     end()
