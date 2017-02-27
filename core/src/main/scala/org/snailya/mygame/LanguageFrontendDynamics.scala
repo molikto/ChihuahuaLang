@@ -191,9 +191,10 @@ trait LanguageFrontendDynamics[T <: AstBase, H <: T] extends LanguageFrontend[T,
               t.parent match {
                 case Some(p) =>
                   val cap = p.content.map(_.toLayout.cap).getOrElse(-1)
-                  if (p.childs.size == cap) p.appendNew()
-                  p.remove(t)
-                  state.selection = Some(p)
+                  if (p.childs.size > cap) {
+                    p.remove(t)
+                    state.selection = Some(p)
+                  }
                 case None =>
               }
             })
