@@ -39,7 +39,7 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
   object style {
     val BackgroundColor = DefaultBgColor
     val SelectionColor = new Color(0xFFFFFF33)
-    val EditingColor = new Color(0x3be81f44)
+    val EditingColor = new Color(0x3c963d66)
     val ErrorColor = new Color(0xe3322d33)
     val PlaceholderColor = new Color(0xFFFFFF77)
     val Size8 = size(8)
