@@ -13,6 +13,7 @@ import com.badlogic.gdx.graphics.g2d.GlyphLayout
 import com.badlogic.gdx.scenes.scene2d.ui.TextField
 import com.badlogic.gdx.scenes.scene2d.ui.TextField.TextFieldStyle
 
+import scala.collection.JavaConverters._
 import scala.collection.mutable
 
 /**
@@ -27,11 +28,12 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
 
   case class Error(t: Tree, s: String)
 
+
   def compile(l: T): Either[String, Seq[Error]]
 
   def NewHole(): H
 
-  val Font = Roboto20
+  val Font = DebugFont20
 
   /**
     * style
@@ -180,7 +182,7 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
     override def measure0(tree: Tree) = measure0(c)
   }
 
-  case class WCommand() extends WGlyph {
+  case class WCommand(replacement: String = "") extends WGlyph {
 
     override def measure0(tree: Tree) = {
       tree.commandLayout = this
@@ -188,7 +190,7 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
       val text = if (placeholderText.nonEmpty) {
         color = PlaceholderColor
         placeholderText
-      } else tree.command
+      } else if (replacement.nonEmpty) replacement else tree.command
       measure0(text)
     }
   }
@@ -243,10 +245,33 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
         (NewHole(), Seq.empty)
       } else {
         val c = content.get
-        val cast = (if (c.toLayout.cap >= 0) childs.take(c.toLayout.cap) else childs).map(_.ast())
+        def sortMismatchError(tree: Tree, s: SyntaxSort) = {
+          Error(tree, "sort mismatch, expecting " + s.name)
+        }
+        val mapped: Seq[Either[Tree, Error]] = if (c.toLayout.cap >= 0) {
+          val samel = childs.take(c.toLayout.cap)
+          samel.zip(c.specs).map(pair => {
+            if (pair._1.content.isEmpty || pair._2.forms.contains(pair._1.content.get)) {
+              Left(pair._1)
+            } else {
+              Right(sortMismatchError(pair._1, pair._2))
+            }
+          })
+        } else {
+          val sp = c.specs.head
+          childs.map(a => if (a.content.isEmpty || sp.forms.contains(a.content.get)) Left(a) else Right(sortMismatchError(a, sp)))
+        }
+        val wrongSortErrors: Seq[Error] = mapped.flatMap {
+          case Left(_) => None
+          case Right(a) => Some(a)
+        }
+        val cast: Seq[(T, Seq[Error])] = mapped.map {
+          case Left(t) => t.ast()
+          case _ => (NewHole(), Seq.empty)
+        }
         val remain = if (c.toLayout.cap >= 0) childs.drop(c.toLayout.cap) else Seq.empty
         val ast = c.toAst.apply(command, cast.map(_._1))
-        val errors = cast.map(_._2).flatten ++ remain.map(a => Error(a, "redundant term"))
+        val errors = wrongSortErrors ++ cast.flatMap(_._2) ++ remain.map(a => Error(a, "redundant term"))
         (ast, errors)
       }
       ret._1.data = this

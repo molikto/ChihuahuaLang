@@ -18,9 +18,10 @@ trait MyGameStyle extends MyGameStyleBase {
 
   Gdx.graphics.setContinuousRendering(false)
 
-  val Roboto = new FreeTypeFontGenerator(Gdx.files.internal("Roboto-Regular.ttf"))
+  val DebugFont = new FreeTypeFontGenerator(Gdx.files.internal("DejaVuSans.ttf"))
 
-  val Roboto20 = new Font(Roboto, size(20))
+
+  val DebugFont20 = new Font(DebugFont, size(20))
 
 
 
@@ -38,7 +39,12 @@ trait MyGameStyle extends MyGameStyleBase {
 
 
   class Font(gen: FreeTypeFontGenerator, size: Float) {
-    val internal = gen.generateFont({val p = new FreeTypeFontParameter(); p.size = size.toInt; p})
+    val internal = gen.generateFont({
+      val p = new FreeTypeFontParameter()
+      p.size = size.toInt
+      p.characters += "λ⇒"
+      p
+    })
     val height = internal.getAscent - internal.getDescent + internal.getCapHeight
     val lineHeight = internal.getLineHeight
 
