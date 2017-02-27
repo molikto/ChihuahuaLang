@@ -203,7 +203,8 @@ class ScreenMain extends ScreenBase {
       commandLayout = null
       val transformer = content.map(_.transformer).getOrElse(layouts.Inline1)
       val cwidgets = childs.map(a => {
-        a.measure(widthHint); a.layout
+        a.measure(widthHint);
+        a.layout
       })
       layout = transformer.fun(cwidgets)
       if (transformer.cap >= 0 && transformer.cap < childs.size) {
@@ -247,10 +248,32 @@ class ScreenMain extends ScreenBase {
         case None =>
           None
       }
-
     }
 
-    def findAfterThis(pred: Tree => Boolean): Option[Tree] = {
+
+    def last(): Tree = {
+      if (childs.isEmpty) this
+      else childs.last.last()
+    }
+
+    def linearizedPrevious(): Option[Tree] = {
+      if (parent.isEmpty) {
+        None
+      } else {
+        val p = parent.get
+        val index = p.childs.indexOf(this)
+        if (index == 0) {
+          Some(p)
+        } else {
+          val s = p.childs(index - 1)
+          Some(s.last())
+        }
+      }
+    }
+
+    def linearizedNext(): Option[Tree] = linearizedNext(_ => true)
+
+    def linearizedNext(pred: Tree => Boolean): Option[Tree] = {
       for (c <- childs) {
         val res = c.find(pred)
         if (res.nonEmpty) return res
@@ -291,6 +314,7 @@ class ScreenMain extends ScreenBase {
     var selection: Option[Tree] = Some(root)
     var isInsert = false
     var clipboard: Option[Tree] = None
+    var hPosition: Float = -1F
   }
 
   /**
@@ -303,7 +327,7 @@ class ScreenMain extends ScreenBase {
   def stateInsertAtNextHoleOrExit() = {
     // TODO make it better
     state.selection.get.commandBuffer = ""
-    val res = state.selection.get.findAfterThis(_.content.isEmpty)
+    val res = state.selection.get.linearizedNext(_.content.isEmpty)
     if (res.nonEmpty) state.selection = res
     else {
       state.isInsert = false
@@ -386,19 +410,26 @@ class ScreenMain extends ScreenBase {
           })
         case 'k' => // go up
           state.selection.foreach(t => {
-
           })
         case 'j' => // go down
-          state.selection.foreach(t => {
-
-          })
+          state.selection match {
+            case Some(t) =>
+              t.linearizedNext()
+            case None =>
+              state.selection = Some(state.root)
+          }
         case 'l' => // go right
-          state.selection.foreach(t => {
-
-          })
+          state.selection match {
+            case Some(t) =>
+              t.linearizedNext().foreach(s => {
+                state.selection = Some(s)
+                state.hPosition = s.commandLayout.globalCenterH()
+              })
+            case None => state.selection = Some(state.root)
+          }
         case 'h' => // go left
           state.selection.foreach(t => {
-
+            state.selection = t.linearizedPrevious()
           })
         case 'K' => // go to parent
           state.selection.foreach(t => {
