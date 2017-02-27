@@ -380,6 +380,7 @@ class ScreenMain extends ScreenBase {
     override def keyDown(keycode: Int) = false
 
     override def keyUp(keycode: Int) = {
+      needsRender = true
       if (state.isInsert) {
         if (keycode == Keys.ESCAPE) {
           if (state.selection.nonEmpty) {
@@ -393,133 +394,138 @@ class ScreenMain extends ScreenBase {
       false
     }
 
-    override def keyTyped(character: Char) = if (state.isInsert) {
-      delog("key typed: " + Integer.toHexString(character.toInt))
-      assert(state.selection.isDefined)
-      val selected = state.selection.get
-      if (selected.content.isEmpty) {
-        if (character == ' ' || character == '\n') {
-          stateCommitCommand(true)
-        } else if (character == '\b') {
-          if (selected.commandBuffer.nonEmpty) selected.commandBuffer = selected.commandBuffer.dropRight(1)
-        } else if (character >= '!' && character <= '~') {
-          // TODO valid commands and identifiers
-          selected.commandBuffer = selected.commandBuffer + character
+    override def keyTyped(character: Char) = {
+      needsRender = true
+      if (state.isInsert) {
+        delog("key typed: " + Integer.toHexString(character.toInt))
+        assert(state.selection.isDefined)
+        val selected = state.selection.get
+        if (selected.content.isEmpty) {
+          if (character == ' ' || character == '\n') {
+            stateCommitCommand(true)
+          } else if (character == '\b') {
+            if (selected.commandBuffer.nonEmpty) selected.commandBuffer = selected.commandBuffer.dropRight(1)
+          } else if (character >= '!' && character <= '~') {
+            // TODO valid commands and identifiers
+            selected.commandBuffer = selected.commandBuffer + character
+          }
         }
-      }
-      true
-    } else {
-      character match {
-        case 'i' => // enter insert mode
-          if (state.selection.isDefined) state.isInsert = true
-        case 'n' => // new empty node
-          state.selection.foreach(t => {
-            if (t.content.nonEmpty) {
-              val c = new Tree(None)
-              t.append(c)
-              state.selection = Some(c)
-            }
-          })
-        case 'k' => // go up
-          state.selection.foreach(t => {
-            // TODO
-          })
-        case 'j' => // go down
-          state.selection match {
-            case Some(t) =>
+        true
+      } else {
+        character match {
+          case 'i' => // enter insert mode
+            if (state.selection.isDefined) state.isInsert = true
+          case 'n' => // new empty node
+            state.selection.foreach(t => {
+              if (t.content.nonEmpty) {
+                val c = new Tree(None)
+                t.append(c)
+                state.selection = Some(c)
+              }
+            })
+          case 'k' => // go up
+            state.selection.foreach(t => {
               // TODO
-            case None =>
-              state.selection = Some(state.root)
-          }
-        case 'l' => // go right
-          state.selection match {
-            case Some(t) =>
-              t.linearizedNext().foreach(s => {
-                state.selection = Some(s)
-                //state.hPosition = s.commandLayout.globalCenterH()
-              })
-            case None => state.selection = Some(state.root)
-          }
-        case 'h' => // go left
-          state.selection.foreach(t => {
-            state.selection = t.linearizedPrevious()
-          })
-        case 'K' => // go to parent
-          state.selection.foreach(t => {
-            state.selection = t.parent
-          })
-        case 'J' => // go to first child
-          state.selection match {
-            case Some(t) =>
-              if (t.childs.nonEmpty) state.selection = Some(t.childs.head)
-            case _ => state.selection = Some(state.root)
-          }
-        case 'L' => // go to next sibling
-          state.selection.foreach(t => {
-            t.parent match {
-              case Some(p) =>
-                val selection = Math.min(p.childs.indexOf(t) + 1, p.childs.size - 1)
-                state.selection = Some(p.childs(selection))
+            })
+          case 'j' => // go down
+            state.selection match {
+              case Some(t) =>
+              // TODO
               case None =>
+                state.selection = Some(state.root)
             }
-          })
-        case 'H' => // go to previous sibling
-          state.selection.foreach(t => {
-            t.parent match {
-              case Some(p) =>
-                val selection = Math.max(p.childs.indexOf(t) - 1, 0)
-                state.selection = Some(p.childs(selection))
-              case None =>
+          case 'l' => // go right
+            state.selection match {
+              case Some(t) =>
+                t.linearizedNext().foreach(s => {
+                  state.selection = Some(s)
+                  //state.hPosition = s.commandLayout.globalCenterH()
+                })
+              case None => state.selection = Some(state.root)
             }
-          })
-        case 'd' => // delete an item
-          state.selection.foreach(t => {
-            if (t.childs.nonEmpty || t.content.nonEmpty) {
-              val tt = new Tree(t.content)
-              tt.childs ++= t.childs
-              state.clipboard = Some(tt)
-              t.content = None
-              t.childs.clear()
+          case 'h' => // go left
+            state.selection.foreach(t => {
+              state.selection = t.linearizedPrevious()
+            })
+          case 'K' => // go to parent
+            state.selection.foreach(t => {
+              state.selection = t.parent
+            })
+          case 'J' => // go to first child
+            state.selection match {
+              case Some(t) =>
+                if (t.childs.nonEmpty) state.selection = Some(t.childs.head)
+              case _ => state.selection = Some(state.root)
             }
-            t.parent match {
-              case Some(p) =>
-                val cap = p.content.map(_.transformer.cap).getOrElse(-1)
-                if (p.childs.size == cap) p.appendNew()
-                p.remove(t)
-                state.selection = Some(p)
-              case None =>
-            }
-          })
-        case 'p' => // paste an item
-          state.selection.foreach(t => {
-            state.clipboard match {
-              case Some(c) =>
-                val cc = c.copy()
-                t.append(cc)
-                state.selection = Some(cc)
-              case None =>
-            }
-          })
-        case _ =>
+          case 'L' => // go to next sibling
+            state.selection.foreach(t => {
+              t.parent match {
+                case Some(p) =>
+                  val selection = Math.min(p.childs.indexOf(t) + 1, p.childs.size - 1)
+                  state.selection = Some(p.childs(selection))
+                case None =>
+              }
+            })
+          case 'H' => // go to previous sibling
+            state.selection.foreach(t => {
+              t.parent match {
+                case Some(p) =>
+                  val selection = Math.max(p.childs.indexOf(t) - 1, 0)
+                  state.selection = Some(p.childs(selection))
+                case None =>
+              }
+            })
+          case 'd' => // delete an item
+            state.selection.foreach(t => {
+              if (t.childs.nonEmpty || t.content.nonEmpty) {
+                val tt = new Tree(t.content)
+                tt.childs ++= t.childs
+                state.clipboard = Some(tt)
+                t.content = None
+                t.childs.clear()
+              }
+              t.parent match {
+                case Some(p) =>
+                  val cap = p.content.map(_.transformer.cap).getOrElse(-1)
+                  if (p.childs.size == cap) p.appendNew()
+                  p.remove(t)
+                  state.selection = Some(p)
+                case None =>
+              }
+            })
+          case 'p' => // paste an item
+            state.selection.foreach(t => {
+              state.clipboard match {
+                case Some(c) =>
+                  val cc = c.copy()
+                  t.append(cc)
+                  state.selection = Some(cc)
+                case None =>
+              }
+            })
+          case _ =>
+        }
+        true
       }
-      true
     }
-
-
   })
 
+  var needsRender = true
 
   override def render(delta: Float) = {
-    var t = System.nanoTime()
-    clearColor(BackgroundColor)
-    begin()
-    state.root.measure(screenPixelWidth - Size8 * 2)
-    state.selection.foreach(a => {
-      a.layout.bg = SelectionColor
-      a.commandLayout.bg = if (state.isInsert) EditingColor else SelectionColor
-    })
-    state.root.layout.draw(Size8, Size8)
-    delog("redrawn " + (System.nanoTime() - t) / 1000000 + "ms")
-    end()
+    if (needsRender) {
+      needsRender = false
+      var t = System.nanoTime()
+      clearColor(BackgroundColor)
+      begin()
+      state.root.measure(screenPixelWidth - Size8 * 2)
+      state.selection.foreach(a => {
+        a.layout.bg = SelectionColor
+        a.commandLayout.bg = if (state.isInsert) EditingColor else SelectionColor
+      })
+      state.root.layout.draw(Size8, Size8)
+      delog("redrawn " + (System.nanoTime() - t) / 1000000 + "ms")
+      end()
+    }
   }
 }
