@@ -2,7 +2,7 @@ package org.snailya.mygame
 
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.graphics.{Color, GL20, Texture}
-import com.badlogic.gdx.graphics.g2d.{BitmapFont, SpriteBatch}
+import com.badlogic.gdx.graphics.g2d.{BitmapFont, GlyphLayout, SpriteBatch}
 import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator
 import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator.FreeTypeFontParameter
 
@@ -59,8 +59,8 @@ trait MyGameStyle extends MyGameStyleBase {
       layout.width
     }
 
-    def measure(str: String) = {
-      internal.getCache.addText(str, 0, 0).width
+    def measure(str: String): GlyphLayout = {
+      internal.getCache.addText(str, 0, 0)
     }
 
   }
@@ -69,7 +69,7 @@ trait MyGameStyle extends MyGameStyleBase {
 
   val pureColorTexture = new Texture("pure_white.png")
 
-  def draw(x: Float, y: Float, w: Float, h: Float, c: Color): Unit = {
+  def drawColor(x: Float, y: Float, w: Float, h: Float, c: Color): Unit = {
     batch.setColor(c)
     batch.draw(pureColorTexture, x, screenPixelHeight - y - h, w, h)
     batch.setColor(Color.WHITE)

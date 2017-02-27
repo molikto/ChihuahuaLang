@@ -9,6 +9,7 @@ import MyGame.game._
 import com.badlogic.gdx.{Gdx, InputProcessor}
 import com.badlogic.gdx.Input.Keys
 import com.badlogic.gdx.graphics.Color
+import com.badlogic.gdx.graphics.g2d.GlyphLayout
 import com.badlogic.gdx.scenes.scene2d.ui.TextField
 import com.badlogic.gdx.scenes.scene2d.ui.TextField.TextFieldStyle
 
@@ -42,35 +43,47 @@ class ScreenMain extends ScreenBase {
   case class Language(sorts: Seq[SyntaxSort], forms: Seq[SyntaxForm])
 
   abstract class Widget() {
+
     var x = 0f
     var y = 0f
     var width = 0f
     var height = 0f
-    var tree: Tree = null // this means this is a direct element attached to a tree
+    var measured: Boolean = false
 
     def measure(t: Tree, x: Float, y: Float) = {
-      if (this.tree == null) {
-        this.tree = t
-        this.x = x
-        this.y = y
-        measure0()
+      this.x = x
+      this.y = y
+      if (!measured) {
+        this.measured = true
+        measure0(t)
       }
     }
 
-    def measure0()
+    def draw(px: Float, py: Float)
+
+
+    def measure0(tree: Tree)
   }
 
-  type LayoutTransformer = Seq[Widget] => Widget
+  def drawChildren(px: Float, py: Float, t: Widget, seq: Widget*) = {
+    for (s <- seq) {
+      s.draw(px + t.x, py + t.y)
+    }
+  }
+
+  case class LayoutTransformer(cap: Int, fun: Seq[Widget] => Widget)
 
   case object LIndent extends Widget {
-    override def measure0() = {
+    override def measure0(t: Tree) = {
       width = ItemIndent
       height = Font.lineHeight
     }
+
+    override def draw(px: Float, py: Float) = {}
   }
   case class LSequence(seq: Widget*) extends Widget {
-    override def measure0() = {
-      var x = this.x
+    override def measure0(tree: Tree) = {
+      var x = 0f
       for (s <- seq) {
         s.measure(tree, x, 0)
         x += s.width
@@ -78,10 +91,12 @@ class ScreenMain extends ScreenBase {
       width = x
       height = seq.map(_.height).max
     }
+
+    override def draw(px: Float, py: Float) = drawChildren(px, py, this, seq: _*)
   }
   case class LVertical(seq: Widget*) extends Widget {
     override def measure0(tree: Tree) = {
-      var y = 0
+      var y = 0f
       for (s <- seq) {
         s.measure(tree, 0, y)
         y += s.height
@@ -89,30 +104,53 @@ class ScreenMain extends ScreenBase {
       height = y
       width = seq.map(_.width).max
     }
-  }
-  case class DConstant(c: String) extends Widget {
-    override def measure0(tree: Tree) = {
-      width = Font.measure(c)
-      height = Font.lineHeight
-    }
-  }
-  case class LCommand() extends Widget {
 
+    override def draw(px: Float, py: Float) = drawChildren(px, py, this, seq: _*)
+  }
+
+  abstract class LGlyph() extends Widget {
+    var gl: GlyphLayout = null
     var text: String = null
-    var color: Color = null
+    var color: Color = Color.WHITE
+
+    def measure0(s: String) = {
+      gl = Font.measure(s)
+      text = s
+      width = gl.width
+      height = Font.lineHeight
+    }
+
+    override def draw(px: Float, py: Float) = Font.draw(px + x, py + y, text, color)
+  }
+
+  case class DConstant(c: String) extends LGlyph {
+    override def measure0(tree: Tree) = measure0(c)
+  }
+
+  case class LCommand() extends LGlyph {
+
+
+    var bg: Color = null // this is set after the draw call
 
     override def measure0(tree: Tree) = {
-      tree.layout
+      tree.commandLayout = this
       val placeholderText = if (tree.commandBuffer.nonEmpty) tree.commandBuffer else if (tree.content.isEmpty) "?" else ""
-      text = if (placeholderText.nonEmpty) placeholderText else tree.content.get.command
-      width = Font.measure(text)
-      height = Font.lineHeight
+      val text = if (placeholderText.nonEmpty) {
+        color = PlaceholderColor
+        placeholderText
+      } else tree.content.get.command
+      measure0(text)
+    }
+
+    override def draw(px: Float, py: Float) = {
+      if (bg != null) drawColor(px + x, py + y, width, height, SelectionColor)
+      super.draw(px, py)
     }
   }
 
-  val LayoutInline1: LayoutTransformer = seq => LCommand()
-  val LayoutInline2: LayoutTransformer = seq => LSequence(LCommand(), seq(0))
-  val LayoutDefault: LayoutTransformer = seq => LVertical(seq)
+  val LayoutInline1 = LayoutTransformer(0, seq => LCommand())
+  val LayoutInline2 = LayoutTransformer(1, seq => LSequence(LCommand(), seq.head))
+  val LayoutDefault = LayoutTransformer(-1, seq => LVertical(seq: _*))
 
   def SyntaxForm1(name: String) = SyntaxForm(name, Seq.empty, LayoutInline1)
   def SyntaxForm2(name: String, c: SyntaxSort) = SyntaxForm(name, Seq(c), LayoutInline2)
@@ -124,14 +162,14 @@ class ScreenMain extends ScreenBase {
     val True = SyntaxForm1("true")
     val False = SyntaxForm1("false")
     val IfThenElse = SyntaxForm("if", Seq(Term, Term, Term),
-      (seq) => {
+      LayoutTransformer(3, (seq) => {
         LVertical(
-          LSequence(LCommand(), seq(0)),
+          LSequence(LCommand(),  seq(0)),
           LSequence(LIndent, seq(1)),
           DConstant("else"),
           LSequence(LIndent, seq(2))
         )
-      }
+      })
     )
     val Zero = SyntaxForm1("0")
     val Succ = SyntaxForm2("succ", Term)
@@ -150,22 +188,20 @@ class ScreenMain extends ScreenBase {
     var parent: Option[Tree] = None
 
     var width, height: Float = 0
-    var layout: Widget = null // we use null means that it is NOT measured
-    var commandLayout: Widget = null
+    var commandLayout: LCommand = null
 
-    /**
-      * this will fill in the width, height of a widget... that's it
-      * no wrapping
-      */
-    def measure(widthHint: Float): Unit = {
-      layout = null
+    def measure(widthHint: Float): Widget = {
       commandLayout = null
-      val transformer = content.map(_.transformer).getOrElse(LayoutDefault)
-      // this will give us a layout where the childs is all properly measured and attached to a tree
-      layout = transformer(childs.map(a => {a.measure(widthHint); a.layout}))
+      val transformer = content.map(_.transformer).getOrElse(LayoutInline1)
+      val cwidgets = childs.map(a => {a.measure(widthHint)})
+      var layout = transformer.fun(cwidgets)
+      if (transformer.cap >= 0 && transformer.cap < childs.size) {
+        layout = LayoutDefault.fun(Seq(layout) ++ cwidgets.drop(transformer.cap))
+      }
       // this will measure the rest of the elements just created by the transformer
       // also one child might set the command layout property
       layout.measure(this, 0, 0)
+      layout
     }
 
     def copy(p: Option[Tree]): Tree = {
@@ -253,24 +289,7 @@ class ScreenMain extends ScreenBase {
 
   val Font = Roboto20
 
-  def drawTree(tree: Tree, left: Float, top: Float): Float = {
-    var height = top
-    var placeholderText = if (tree.commandBuffer.nonEmpty) tree.commandBuffer else if (tree.content.isEmpty) "?" else ""
-    if (state.selection.contains(tree)) {
-      val width = Font.measure(if (placeholderText.nonEmpty) placeholderText else tree.content.get.command)
-      draw(left, height, width, Font.height, SelectionColor)
-    }
-    if (placeholderText.nonEmpty) {
-      Font.draw(left, height, placeholderText, PlaceholderColor)
-    } else {
-      Font.draw(left, height, tree.content.get.command)
-    }
-    height += Font.lineHeight
-    for (c <- tree.childs) {
-      height = drawTree(c, left + ItemIndent, height)
-    }
-    height
-  }
+
 
   def stateInsertAtNextHoleOrExit() = { // TODO make it better
     state.selection.get.commandBuffer = ""
@@ -435,8 +454,9 @@ class ScreenMain extends ScreenBase {
   override def render(delta: Float) = {
     clearColor(BackgroundColor)
     begin()
-    state.root.measure(screenPixelWidth - Size8 * 2)
-    drawTree(state.root, Size8, Size8)
+    val layout = state.root.measure(screenPixelWidth - Size8 * 2)
+    state.selection.foreach(a => a.commandLayout.bg = SelectionColor)
+    layout.draw(Size8, Size8)
     delog("redrawn")
     end()
   }
