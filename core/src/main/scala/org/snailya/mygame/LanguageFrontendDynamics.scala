@@ -18,7 +18,7 @@ import scala.collection.mutable
 /**
   * Created by molikto on 27/02/2017.
   */
-trait LanguageFrontendDynamics[T, H <: T] extends LanguageFrontend[T, H] {
+trait LanguageFrontendDynamics[T <: AstBase, H <: T] extends LanguageFrontend[T, H] {
 
 
   object state {
@@ -28,6 +28,8 @@ trait LanguageFrontendDynamics[T, H <: T] extends LanguageFrontend[T, H] {
     var clipboard: Option[Tree] = None
     var hPosition: Float = -1F
   }
+
+
 
   /**
     * UI
@@ -221,6 +223,17 @@ trait LanguageFrontendDynamics[T, H <: T] extends LanguageFrontend[T, H] {
     if (needsRender) {
       needsRender = false
       var t = System.nanoTime()
+
+      // compile information
+      val (ast, lerrors) = state.root.ast()
+      val res = compile(ast)
+      val errors = lerrors ++ (res match {
+        case Left(_) => Seq.empty
+        case Right(a) => a
+      })
+      delog(errors.map(_.s))
+
+      // measure and rendering
       clearColor(BackgroundColor)
       begin()
       state.root.measure(screenPixelWidth - Size8 * 2)
@@ -228,8 +241,8 @@ trait LanguageFrontendDynamics[T, H <: T] extends LanguageFrontend[T, H] {
         a.layout.bg = SelectionColor
         a.commandLayout.bg = if (state.isInsert) EditingColor else SelectionColor
       })
-      state.root.ast()
       state.root.layout.draw(Size8, Size8)
+
       delog("redrawn " + (System.nanoTime() - t) / 1000000 + "ms")
       end()
     }

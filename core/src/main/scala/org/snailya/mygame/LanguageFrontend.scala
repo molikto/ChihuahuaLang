@@ -18,9 +18,16 @@ import scala.collection.mutable
 /**
   * Created by molikto on 27/02/2017.
   */
-trait LanguageFrontend[T, H <: T] {
+abstract class AstBase {
+  var data: Object = null
+}
+trait LanguageFrontend[T <: AstBase, H <: T] {
 
   val Lang: Language
+
+  case class Error(t: Tree, s: String)
+
+  def compile(l: T): Either[String, Seq[Error]]
 
   def NewHole(): H
 
@@ -59,7 +66,7 @@ trait LanguageFrontend[T, H <: T] {
     def accept(a: String) = s(a)
   }
 
-  class ToLayout(cap: Int, fun: Seq[Widget] => Widget)
+  case class ToLayout(cap: Int, fun: Seq[Widget] => Widget)
 
   type ToAst = (String, Seq[T]) => T
 
@@ -109,10 +116,6 @@ trait LanguageFrontend[T, H <: T] {
     }
   }
   object WIndent extends WIndentAbs
-
-  case object WExtraParameters extends WIndentAbs {
-    bg = ErrorColor
-  }
 
   case class WSequence(seq: Widget*) extends Widget {
     override def measure0(tree: Tree) = {
@@ -221,19 +224,26 @@ trait LanguageFrontend[T, H <: T] {
       })
       layout = transformer.fun(cwidgets)
       if (transformer.cap >= 0 && transformer.cap < childs.size) {
-        layout = layouts.Default.fun(Seq(layout, WSequence(WExtraParameters, WVertical(cwidgets.drop(transformer.cap): _*))))
+        layout = layouts.Default.fun(Seq(layout, WSequence(WIndent, WVertical(cwidgets.drop(transformer.cap): _*))))
       }
       // this will measure the rest of the elements just created by the transformer
       // also one child might set the command layout property
       layout.measure(this, 0, 0)
     }
 
-    def ast(): T = {
-      if (content.isEmpty) {
-        NewHole()
+    def ast(): (T, Seq[Error]) = {
+      val ret = if (content.isEmpty) {
+        (NewHole(), Seq.empty)
       } else {
-
+        val c = content.get
+        val cast = (if (c.toLayout.cap >= 0) childs.take(c.toLayout.cap) else childs).map(_.ast())
+        val remain = if (c.toLayout.cap >= 0) childs.drop(c.toLayout.cap) else Seq.empty
+        val ast = c.toAst.apply(command, cast.map(_._1))
+        val errors = cast.map(_._2).flatten ++ remain.map(a => Error(a, "redundant term"))
+        (ast, errors)
       }
+      ret._1.data = this
+      ret
     }
 
     def copyContent(c: Tree): Unit = {
