@@ -18,7 +18,7 @@ import scala.collection.mutable
 /**
   * Created by molikto on 27/02/2017.
   */
-trait LanguageFrontendDynamics[T] extends LanguageFrontend[T] {
+trait LanguageFrontendDynamics[T, H <: T] extends LanguageFrontend[T, H] {
 
 
   object state {
@@ -228,7 +228,7 @@ trait LanguageFrontendDynamics[T] extends LanguageFrontend[T] {
         a.layout.bg = SelectionColor
         a.commandLayout.bg = if (state.isInsert) EditingColor else SelectionColor
       })
-      //state.root.ast()
+      state.root.ast()
       state.root.layout.draw(Size8, Size8)
       delog("redrawn " + (System.nanoTime() - t) / 1000000 + "ms")
       end()

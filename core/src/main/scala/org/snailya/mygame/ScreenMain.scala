@@ -17,12 +17,24 @@ import scala.collection.mutable
 
 object UntypedArithmeticCompiler {
   abstract class Ast
+  case object True extends Ast
+  case object False extends Ast
+  case class If(pred: Ast, left: Ast, right: Ast) extends Ast
+  case class Pred(a: Ast) extends Ast
+  case class Succ(a: Ast) extends Ast
+  case class IsZero(a: Ast) extends Ast
+  case class Number(s: BigInt) extends Ast
+  case class Hole() extends Ast
 }
 
-trait UntypedArithmeticFrontend extends LanguageFrontendDynamics[UntypedArithmeticCompiler.Ast] {
+trait UntypedArithmeticFrontend extends LanguageFrontendDynamics[UntypedArithmeticCompiler.Ast, UntypedArithmeticCompiler.Hole] {
+  val uac = UntypedArithmeticCompiler
+
+  def NewHole() = uac.Hole()
+
   val Term = SyntaxSort("term", null)
-  val True = SyntaxForm1("true")
-  val False = SyntaxForm1("false")
+  val True = SyntaxFormConstant("true", uac.True)
+  val False = SyntaxFormConstant("false", uac.False)
   val IfThenElse = SyntaxForm(ConstantCommand("if"), Seq(Term, Term, Term),
     ToLayout(3, (seq) => {
       WVertical(
@@ -31,11 +43,12 @@ trait UntypedArithmeticFrontend extends LanguageFrontendDynamics[UntypedArithmet
         WConstant("else"),
         WSequence(WIndent, seq(2))
       )
-    })
+    }),
+    (name, childs) => uac.If(childs(0), childs(1), childs(2))
   )
-  val Succ = SyntaxForm2("succ", Term)
-  val Pred = SyntaxForm2("pred", Term)
-  val IsZero = SyntaxForm2("iszero", Term)
+  val Succ = SyntaxFormApplicative1("succ", Term, (_, a) => uac.Succ(a(0)))
+  val Pred = SyntaxFormApplicative1("pred", Term, (_, a) => uac.Pred(a(0)))
+  val IsZero = SyntaxFormApplicative1("iszero", Term, (_, a) => uac.IsZero(a(0)))
   def isPositiveNumber(s: String) = {
     s.length > 0 && s.forall(a => "0123456789".contains(a))
   }
@@ -43,13 +56,11 @@ trait UntypedArithmeticFrontend extends LanguageFrontendDynamics[UntypedArithmet
     if (s.startsWith("-")) isPositiveNumber(s.substring(1))
     else isPositiveNumber(s)
   }
-  val Number = SyntaxForm(AcceptanceCommand(isNumber), Seq(), layouts.Inline1)
+  val Number = SyntaxForm(AcceptanceCommand(isNumber), Seq(), layouts.Inline1, (c, _) => uac.Number(BigInt(c)))
   Term.forms = Seq(True, False, IfThenElse, Number, Succ, Pred, IsZero)
   override val Lang = Language(Seq(Term), Term.forms)
 }
 
 class ScreenMain extends ScreenBase with UntypedArithmeticFrontend {
-
   override def render(delta: Float) = super.renderFrontend(delta)
-
 }

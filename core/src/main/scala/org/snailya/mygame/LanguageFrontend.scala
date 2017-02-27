@@ -18,9 +18,11 @@ import scala.collection.mutable
 /**
   * Created by molikto on 27/02/2017.
   */
-trait LanguageFrontend[T] {
+trait LanguageFrontend[T, H <: T] {
 
   val Lang: Language
+
+  def NewHole(): H
 
   val Font = Roboto20
 
@@ -57,9 +59,13 @@ trait LanguageFrontend[T] {
     def accept(a: String) = s(a)
   }
 
+  class ToLayout(cap: Int, fun: Seq[Widget] => Widget)
+
+  type ToAst = (String, Seq[T]) => T
+
   case class SyntaxSort(name: String, var forms: Seq[SyntaxForm] /* var only to construct cyclic reference */)
 
-  case class SyntaxForm(command: Command, specs: Seq[SyntaxSort], toLayout: ToLayout)
+  case class SyntaxForm(command: Command, specs: Seq[SyntaxSort], toLayout: ToLayout, toAst: ToAst)
 
   case class Language(sorts: Seq[SyntaxSort], forms: Seq[SyntaxForm]) {
 
@@ -95,7 +101,6 @@ trait LanguageFrontend[T] {
     }
   }
 
-  case class ToLayout(cap: Int, fun: Seq[Widget] => Widget)
 
   abstract class WIndentAbs extends Widget {
     override def measure0(t: Tree) = {
@@ -167,7 +172,6 @@ trait LanguageFrontend[T] {
 
   case class WCommand() extends WGlyph {
 
-
     override def measure0(tree: Tree) = {
       tree.commandLayout = this
       val placeholderText = if (tree.commandBuffer.nonEmpty) tree.commandBuffer else if (tree.content.isEmpty) "?" else ""
@@ -186,9 +190,9 @@ trait LanguageFrontend[T] {
   }
 
 
-  def SyntaxForm1(name: String) = SyntaxForm(ConstantCommand(name), Seq.empty, layouts.Inline1)
+  def SyntaxFormConstant(name: String, t: T) = SyntaxForm(ConstantCommand(name), Seq.empty, layouts.Inline1, (_, _) => t)
 
-  def SyntaxForm2(name: String, c: SyntaxSort) = SyntaxForm(ConstantCommand(name), Seq(c), layouts.Inline2)
+  def SyntaxFormApplicative1(name: String, c: SyntaxSort, toAst: ToAst) = SyntaxForm(ConstantCommand(name), Seq(c), layouts.Inline2, toAst)
 
 
 
@@ -224,6 +228,13 @@ trait LanguageFrontend[T] {
       layout.measure(this, 0, 0)
     }
 
+    def ast(): T = {
+      if (content.isEmpty) {
+        NewHole()
+      } else {
+
+      }
+    }
 
     def copyContent(c: Tree): Unit = {
       childs.clear()
