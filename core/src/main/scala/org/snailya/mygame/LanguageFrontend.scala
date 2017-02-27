@@ -39,8 +39,8 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
   object style {
     val BackgroundColor = DefaultBgColor
     val SelectionColor = new Color(0xFFFFFF33)
-    val EditingColor = new Color(0xe3322d99)
-    val ErrorColor = new Color(0xe3322d99)
+    val EditingColor = new Color(0x3be81f44)
+    val ErrorColor = new Color(0xe3322d33)
     val PlaceholderColor = new Color(0xFFFFFF77)
     val Size8 = size(8)
     val ItemIndent = size(20)
@@ -96,7 +96,14 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
       }
     }
 
-    def draw(px: Float, py: Float) = if (bg != null) drawColor(px + x, py + y, width, height, bg)
+    var absX: Float = 0
+    var absY: Float = 0
+
+    def draw(px: Float, py: Float) = {
+      absX = px + x
+      absY = py + y
+      if (bg != null) drawColor(px + x, py + y, width, height, bg)
+    }
 
 
     def measure0(tree: Tree)

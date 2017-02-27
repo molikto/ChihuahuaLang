@@ -27,6 +27,9 @@ trait LanguageFrontendDynamics[T <: AstBase, H <: T] extends LanguageFrontend[T,
     var isInsert = false
     var clipboard: Option[Tree] = None
     var hPosition: Float = -1F
+
+    var errors: Seq[Error] = Seq.empty
+
   }
 
 
@@ -227,22 +230,31 @@ trait LanguageFrontendDynamics[T <: AstBase, H <: T] extends LanguageFrontend[T,
       // compile information
       val (ast, lerrors) = state.root.ast()
       val res = compile(ast)
-      val errors = lerrors ++ (res match {
+      state.errors = (lerrors ++ (res match {
         case Left(_) => Seq.empty
         case Right(a) => a
-      })
-      delog(errors.map(_.s))
+      }))
+
 
       // measure and rendering
       clearColor(BackgroundColor)
       begin()
       state.root.measure(screenPixelWidth - Size8 * 2)
+
+      for (p <- state.errors) {
+        p.t.layout.bg = ErrorColor
+      }
+
       state.selection.foreach(a => {
         a.layout.bg = SelectionColor
         a.commandLayout.bg = if (state.isInsert) EditingColor else SelectionColor
       })
       state.root.layout.draw(Size8, Size8)
 
+      for (p <- state.errors) {
+        val glyph = Font.measure(p.s)
+        Font.draw(screenPixelWidth - Size8 - glyph.width, p.t.layout.absY, p.s)
+      }
       delog("redrawn " + (System.nanoTime() - t) / 1000000 + "ms")
       end()
     }
