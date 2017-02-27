@@ -81,6 +81,7 @@ class ScreenMain extends ScreenBase {
       height = Font.lineHeight
     }
   }
+
   case class WSequence(seq: Widget*) extends Widget {
     override def measure0(tree: Tree) = {
       var x = 0f
@@ -97,6 +98,7 @@ class ScreenMain extends ScreenBase {
       drawChildren(px, py, this, seq: _*)
     }
   }
+
   case class WVertical(seq: Widget*) extends Widget {
     override def measure0(tree: Tree) = {
       var y = 0f
@@ -139,7 +141,6 @@ class ScreenMain extends ScreenBase {
   case class WCommand() extends WGlyph {
 
 
-
     override def measure0(tree: Tree) = {
       tree.commandLayout = this
       val placeholderText = if (tree.commandBuffer.nonEmpty) tree.commandBuffer else if (tree.content.isEmpty) "?" else ""
@@ -158,6 +159,7 @@ class ScreenMain extends ScreenBase {
   }
 
   def SyntaxForm1(name: String) = SyntaxForm(name, Seq.empty, layouts.Inline1)
+
   def SyntaxForm2(name: String, c: SyntaxSort) = SyntaxForm(name, Seq(c), layouts.Inline2)
 
   object UAE {
@@ -169,7 +171,7 @@ class ScreenMain extends ScreenBase {
     val IfThenElse = SyntaxForm("if", Seq(Term, Term, Term),
       LayoutTransformer(3, (seq) => {
         WVertical(
-          WSequence(WCommand(), WConstant(" "),  seq(0)),
+          WSequence(WCommand(), WConstant(" "), seq(0)),
           WSequence(WIndent, seq(1)),
           WConstant("else"),
           WSequence(WIndent, seq(2))
@@ -196,13 +198,16 @@ class ScreenMain extends ScreenBase {
     var commandLayout: WCommand = null
     var layout: Widget = null
 
-    def measure(widthHint: Float): Unit = { // TODO not used now
+    def measure(widthHint: Float): Unit = {
+      // TODO not used now
       commandLayout = null
-      val transformer = content.map(_.transformer).getOrElse(LayoutInline1)
-      val cwidgets = childs.map(a => {a.measure(widthHint); a.layout})
+      val transformer = content.map(_.transformer).getOrElse(layouts.Inline1)
+      val cwidgets = childs.map(a => {
+        a.measure(widthHint); a.layout
+      })
       layout = transformer.fun(cwidgets)
       if (transformer.cap >= 0 && transformer.cap < childs.size) {
-        layout = LayoutDefault.fun(Seq(layout) ++ cwidgets.drop(transformer.cap))
+        layout = layouts.Default.fun(Seq(layout) ++ cwidgets.drop(transformer.cap))
       }
       // this will measure the rest of the elements just created by the transformer
       // also one child might set the command layout property
@@ -295,8 +300,8 @@ class ScreenMain extends ScreenBase {
   val Font = Roboto20
 
 
-
-  def stateInsertAtNextHoleOrExit() = { // TODO make it better
+  def stateInsertAtNextHoleOrExit() = {
+    // TODO make it better
     state.selection.get.commandBuffer = ""
     val res = state.selection.get.findAfterThis(_.content.isEmpty)
     if (res.nonEmpty) state.selection = res
@@ -306,9 +311,9 @@ class ScreenMain extends ScreenBase {
   }
 
   def stateCommitCommand(jump: Boolean): Unit = {
-    assert (state.selection.nonEmpty)
+    assert(state.selection.nonEmpty)
     val selection = state.selection.get
-    assert (selection.content.isEmpty)
+    assert(selection.content.isEmpty)
     val command = selection.commandBuffer
     selection.commandBuffer = ""
     if (command.isEmpty) {
@@ -372,82 +377,85 @@ class ScreenMain extends ScreenBase {
         case 'i' => // enter insert mode
           if (state.selection.isDefined) state.isInsert = true
         case 'n' => // new empty node
-          state.selection match {
-            case Some(t) =>
-              if (t.content.nonEmpty) {
-                val c = new Tree(None)
-                t.append(c)
-                state.selection = Some(c)
-              }
-            case None =>
-          }
-        case 'k' => // go to parent
-          state.selection match {
-            case Some(t) =>
-              state.selection = t.parent
-            case _ =>
-          }
-        case 'j' => // go to first child
+          state.selection.foreach(t => {
+            if (t.content.nonEmpty) {
+              val c = new Tree(None)
+              t.append(c)
+              state.selection = Some(c)
+            }
+          })
+        case 'k' => // go up
+          state.selection.foreach(t => {
+
+          })
+        case 'j' => // go down
+          state.selection.foreach(t => {
+
+          })
+        case 'l' => // go right
+          state.selection.foreach(t => {
+
+          })
+        case 'h' => // go left
+          state.selection.foreach(t => {
+
+          })
+        case 'K' => // go to parent
+          state.selection.foreach(t => {
+            state.selection = t.parent
+          })
+        case 'J' => // go to first child
           state.selection match {
             case Some(t) =>
               if (t.childs.nonEmpty) state.selection = Some(t.childs.head)
             case _ => state.selection = Some(state.root)
-
           }
-        case 'l' => // go to next sibling
-          state.selection match {
-            case Some(t) =>
-              t.parent match {
-                case Some(p) =>
-                  val selection = Math.min(p.childs.indexOf(t) + 1, p.childs.size - 1)
-                  state.selection = Some(p.childs(selection))
-                case None =>
-              }
-            case _ =>
-          }
-        case 'h' => // go to previous sibling
-          state.selection match {
-            case Some(t) =>
-              t.parent match {
-                case Some(p) =>
-                  val selection = Math.max(p.childs.indexOf(t) - 1, 0)
-                  state.selection = Some(p.childs(selection))
-                case None =>
-              }
-            case _ =>
-          }
+        case 'L' => // go to next sibling
+          state.selection.foreach(t => {
+            t.parent match {
+              case Some(p) =>
+                val selection = Math.min(p.childs.indexOf(t) + 1, p.childs.size - 1)
+                state.selection = Some(p.childs(selection))
+              case None =>
+            }
+          })
+        case 'H' => // go to previous sibling
+          state.selection.foreach(t => {
+            t.parent match {
+              case Some(p) =>
+                val selection = Math.max(p.childs.indexOf(t) - 1, 0)
+                state.selection = Some(p.childs(selection))
+              case None =>
+            }
+          })
         case 'd' => // delete an item
-          state.selection match {
-            case Some(t) =>
-              if (t.childs.nonEmpty || t.content.nonEmpty) {
-                val tt = new Tree(t.content)
-                tt.childs ++= t.childs
-                state.clipboard = Some(tt)
-                t.content = None
-                t.childs.clear()
-              }
-              t.parent match {
-                case Some(p) =>
-                  val cap = p.content.map(_.transformer.cap).getOrElse(-1)
-                  if (p.childs.size == cap) p.appendNew()
-                  p.remove(t)
-                  state.selection = Some(p)
-                case None =>
-              }
-            case None =>
-          }
+          state.selection.foreach(t => {
+            if (t.childs.nonEmpty || t.content.nonEmpty) {
+              val tt = new Tree(t.content)
+              tt.childs ++= t.childs
+              state.clipboard = Some(tt)
+              t.content = None
+              t.childs.clear()
+            }
+            t.parent match {
+              case Some(p) =>
+                val cap = p.content.map(_.transformer.cap).getOrElse(-1)
+                if (p.childs.size == cap) p.appendNew()
+                p.remove(t)
+                state.selection = Some(p)
+              case None =>
+            }
+          })
         case 'p' => // paste an item
-          state.selection match {
-            case Some(t) =>
-              state.clipboard match {
-                case Some(c) =>
-                  val cc = c.copy()
-                  t.append(cc)
-                  state.selection = Some(cc)
-                case None =>
-              }
-            case None =>
-          }
+          state.selection.foreach(t => {
+            state.clipboard match {
+              case Some(c) =>
+                val cc = c.copy()
+                t.append(cc)
+                state.selection = Some(cc)
+              case None =>
+            }
+          })
         case _ =>
       }
       true
@@ -455,7 +463,6 @@ class ScreenMain extends ScreenBase {
 
 
   })
-
 
 
   override def render(delta: Float) = {
