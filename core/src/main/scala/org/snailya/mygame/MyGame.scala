@@ -47,8 +47,11 @@ class MyGame extends MyGameStyle {
     if (current != null) current.pause()
   }
 
+  val DefaultBgColor = new Color(0x2b303bFF)
+
   def render(): Unit = {
     if (current != null) current.render(Gdx.graphics.getDeltaTime)
+    else clearColor(DefaultBgColor)
   }
 
 
