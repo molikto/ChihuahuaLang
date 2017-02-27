@@ -36,10 +36,19 @@ class ScreenMain extends ScreenBase {
     * Keys
     */
 
+  abstract class Command() {
+    def accept(s: String): Boolean
+  }
+  case class ConstantCommand(s: String) extends Command {
+    def accept(a: String) = a == s
+  }
+  case class AcceptanceCommand(s: String => Boolean) extends Command {
+    def accept(a: String) = s(a)
+  }
 
   case class SyntaxSort(name: String, var forms: Seq[SyntaxForm] /* var only to construct cyclic reference */)
 
-  case class SyntaxForm(command: String, specs: Seq[SyntaxSort], transformer: LayoutTransformer)
+  case class SyntaxForm(command: Command, specs: Seq[SyntaxSort], transformer: LayoutTransformer)
 
   case class Language(sorts: Seq[SyntaxSort], forms: Seq[SyntaxForm])
 
@@ -147,7 +156,7 @@ class ScreenMain extends ScreenBase {
       val text = if (placeholderText.nonEmpty) {
         color = PlaceholderColor
         placeholderText
-      } else tree.content.get.command
+      } else tree.command
       measure0(text)
     }
   }
@@ -158,9 +167,10 @@ class ScreenMain extends ScreenBase {
     val Default = LayoutTransformer(-1, seq => WVertical(seq: _*))
   }
 
-  def SyntaxForm1(name: String) = SyntaxForm(name, Seq.empty, layouts.Inline1)
 
-  def SyntaxForm2(name: String, c: SyntaxSort) = SyntaxForm(name, Seq(c), layouts.Inline2)
+  def SyntaxForm1(name: String) = SyntaxForm(ConstantCommand(name), Seq.empty, layouts.Inline1)
+
+  def SyntaxForm2(name: String, c: SyntaxSort) = SyntaxForm(ConstantCommand(name), Seq(c), layouts.Inline2)
 
   object UAE {
 
@@ -168,7 +178,7 @@ class ScreenMain extends ScreenBase {
 
     val True = SyntaxForm1("true")
     val False = SyntaxForm1("false")
-    val IfThenElse = SyntaxForm("if", Seq(Term, Term, Term),
+    val IfThenElse = SyntaxForm(ConstantCommand("if"), Seq(Term, Term, Term),
       LayoutTransformer(3, (seq) => {
         WVertical(
           WSequence(WCommand(), WConstant(" "), seq(0)),
@@ -190,6 +200,7 @@ class ScreenMain extends ScreenBase {
 
   class Tree(var content: Option[SyntaxForm]) {
 
+    var command: String = ""
     var commandBuffer = ""
     val childs: mutable.Buffer[Tree] = mutable.ArrayBuffer.empty
     var parent: Option[Tree] = None
@@ -203,7 +214,7 @@ class ScreenMain extends ScreenBase {
       commandLayout = null
       val transformer = content.map(_.transformer).getOrElse(layouts.Inline1)
       val cwidgets = childs.map(a => {
-        a.measure(widthHint);
+        a.measure(widthHint)
         a.layout
       })
       layout = transformer.fun(cwidgets)
@@ -234,7 +245,7 @@ class ScreenMain extends ScreenBase {
       }
     }
 
-    def findSiblings(pred: Tree => Boolean): Option[Tree] = {
+    def linearizedNextInSiblings(pred: Tree => Boolean): Option[Tree] = {
       parent match {
         case Some(p) =>
           val i = p.childs.indexOf(this)
@@ -280,8 +291,8 @@ class ScreenMain extends ScreenBase {
       }
       var c = this
       while (c.parent.nonEmpty) {
-        val res = c.findSiblings(pred)
-        if (res != null) return res
+        val res = c.linearizedNextInSiblings(pred)
+        if (res.nonEmpty) return res
         c = c.parent.get
       }
       None
@@ -343,9 +354,10 @@ class ScreenMain extends ScreenBase {
     if (command.isEmpty) {
       state.isInsert = false
     } else {
-      state.Lang.forms.find(_.command == command) match {
+      state.Lang.forms.find(_.command.accept(command)) match {
         case Some(f) =>
           selection.content = Some(f)
+          selection.command = command
           f.specs.foreach(_ => selection.appendNew())
           if (jump) stateInsertAtNextHoleOrExit()
         case None =>
@@ -410,11 +422,12 @@ class ScreenMain extends ScreenBase {
           })
         case 'k' => // go up
           state.selection.foreach(t => {
+            // TODO
           })
         case 'j' => // go down
           state.selection match {
             case Some(t) =>
-              t.linearizedNext()
+              // TODO
             case None =>
               state.selection = Some(state.root)
           }
@@ -423,7 +436,7 @@ class ScreenMain extends ScreenBase {
             case Some(t) =>
               t.linearizedNext().foreach(s => {
                 state.selection = Some(s)
-                state.hPosition = s.commandLayout.globalCenterH()
+                //state.hPosition = s.commandLayout.globalCenterH()
               })
             case None => state.selection = Some(state.root)
           }
