@@ -120,12 +120,24 @@ trait LanguageFrontendDynamics[T <: AstBase, H <: T] extends LanguageFrontend[T,
         character match {
           case 'i' => // enter insert mode
             if (state.selection.isDefined) state.isInsert = true
-          case 'n' => // new empty node
+          case 'n' => // new empty sibling node next to this node
+            state.selection.foreach(t => {
+              if (t.parent.isEmpty) {
+                state.selection = Some(t.appendNew())
+              } else {
+                val p = t.parent.get
+                val i = p.childs.indexOf(t)
+                val c = new Tree(None)
+                p.insert(i + 1, c)
+                state.selection = Some(c)
+              }
+              state.isInsert = true
+            })
+          case 'N' => // new empty child node
             state.selection.foreach(t => {
               if (t.content.nonEmpty) {
-                val c = new Tree(None)
-                t.append(c)
-                state.selection = Some(c)
+                state.selection = Some(t.appendNew())
+                state.isInsert = true
               }
             })
           case 'k' => // go up

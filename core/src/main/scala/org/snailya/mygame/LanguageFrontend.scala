@@ -121,7 +121,7 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
   abstract class WIndentAbs extends Widget {
     override def measure0(t: Tree) = {
       width = ItemIndent
-      height = Font.lineHeight
+      height = 0
     }
   }
   object WIndent extends WIndentAbs
@@ -134,7 +134,7 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
         x += s.width
       }
       width = x
-      height = seq.map(_.height).max
+      height = if (seq.isEmpty) 0 else seq.map(_.height).max
     }
 
     override def draw(px: Float, py: Float) = {
@@ -151,7 +151,7 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
         y += s.height
       }
       height = y
-      width = seq.map(_.width).max
+      width = if (seq.isEmpty) 0 else seq.map(_.width).max
     }
 
     override def draw(px: Float, py: Float) = {
@@ -210,6 +210,7 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
 
 
   class Tree(var content: Option[SyntaxForm]) {
+
 
     var command: String = ""
     val childs: mutable.Buffer[Tree] = mutable.ArrayBuffer.empty
@@ -380,10 +381,17 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
       childs.append(c)
     }
 
-    def appendNew() = {
+    def insert(i: Int, c: Tree) = {
+      assert(c.parent.isEmpty)
+      c.parent = Some(this)
+      childs.insert(i, c)
+    }
+
+    def appendNew(): Tree = {
       val c = new Tree(None)
       c.parent = Some(this)
       childs.append(c)
+      c
     }
 
     def remove(t: Tree): Unit = {
@@ -392,8 +400,5 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
       childs.remove(childs.indexOf(t))
     }
   }
-
-
-
 
 }

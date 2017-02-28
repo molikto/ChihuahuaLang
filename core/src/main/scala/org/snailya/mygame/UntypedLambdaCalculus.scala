@@ -12,7 +12,7 @@ object UntypedLambdaCalculus {
   case class Reference(name: String) extends Referential
   case class Hole() extends Referential
   case class Definition(name: Referential, right: Ast) extends Ast
-  case class Program(defs: Definition*) extends Ast
+  case class Begin(defs: Ast*) extends Ast
 
   trait Frontend extends LanguageFrontendDynamics[Ast, Hole] {
 
@@ -46,7 +46,25 @@ object UntypedLambdaCalculus {
       (c, seq) => ULC.Reference(c)
     )
 
-    Term.forms = Seq(Application, Lambda, Reference)
+    val Definition = SyntaxForm(
+      ConstantCommand("def"),
+      Seq(Binding, Term),
+      ToLayout(2, seq => WSequence(WCommand(), WConstant(" "), seq(0), WConstant(" = "), seq(1))),
+      (c, seq) => ULC.Definition(seq(0).asInstanceOf[Referential], seq(1))
+    )
+
+    val Begin = SyntaxForm(
+      ConstantCommand("{"),
+      Seq(Term),
+      ToLayout(-1, seq => WVertical(
+        WCommand(),
+        WSequence(WIndent, WVertical(seq: _*)),
+        WConstant("}")
+      )),
+      (c, seq) => ULC.Begin(seq: _*)
+    )
+
+    Term.forms = Seq(Application, Lambda, Definition, Begin, Reference)
 
     Binding.forms = Seq(Reference)
 
