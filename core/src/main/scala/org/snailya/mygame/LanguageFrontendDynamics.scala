@@ -63,7 +63,7 @@ trait LanguageFrontendDynamics[T <: AstBase, H <: T] extends LanguageFrontend[T,
         case Some(f) =>
           selection.content = Some(f)
           selection.command = command
-          f.specs.foreach(_ => selection.appendNew())
+          f.childs.foreach(_ => selection.appendNew())
           if (jump) stateInsertAtNextHoleOrExit()
         case None =>
       }

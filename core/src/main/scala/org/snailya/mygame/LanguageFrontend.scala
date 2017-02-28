@@ -74,7 +74,7 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
 
   case class SyntaxSort(name: String, var forms: Seq[SyntaxForm] /* var only to construct cyclic reference */)
 
-  case class SyntaxForm(command: Command, specs: Seq[SyntaxSort], toLayout: ToLayout, toAst: ToAst)
+  case class SyntaxForm(command: Command, childs: Seq[SyntaxSort], toLayout: ToLayout, toAst: ToAst)
 
   case class Language(sorts: Seq[SyntaxSort], forms: Seq[SyntaxForm]) {
 
@@ -251,7 +251,7 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
         }
         val mapped: Seq[Either[Tree, Error]] = if (c.toLayout.cap >= 0) {
           val samel = childs.take(c.toLayout.cap)
-          samel.zip(c.specs).map(pair => {
+          samel.zip(c.childs).map(pair => {
             if (pair._1.content.isEmpty || pair._2.forms.contains(pair._1.content.get)) {
               Left(pair._1)
             } else {
@@ -259,7 +259,7 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
             }
           })
         } else {
-          val sp = c.specs.head
+          val sp = c.childs.head
           childs.map(a => if (a.content.isEmpty || sp.forms.contains(a.content.get)) Left(a) else Right(sortMismatchError(a, sp)))
         }
         val wrongSortErrors: Seq[Error] = mapped.flatMap {
