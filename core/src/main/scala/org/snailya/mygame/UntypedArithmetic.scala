@@ -72,7 +72,7 @@ object UntypedArithmetic {
     val True = SyntaxFormConstant("true", UAA.True)
     val False = SyntaxFormConstant("false", UAA.False)
     val IfThenElse = SyntaxForm(ConstantCommand("if"), Seq(Term, Term, Term),
-      ToLayout(3, (seq) => {
+      ToWidget(3, (seq) => {
         WVertical(
           WSequence(WCommand(), WConstant(" "), seq(0)),
           WSequence(WIndent, seq(1)),

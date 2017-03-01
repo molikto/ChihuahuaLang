@@ -47,17 +47,19 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
     def accept(a: String) = s(a)
   }
 
-  case class ToLayout(cap: Int, fun: Seq[Widget] => Widget)
+  case class ToWidget(cap: Int, fun: Seq[Widget] => Widget)
 
   type ToAst = (String, Seq[T]) => T
 
   case class SyntaxSort(name: String, var forms: Seq[SyntaxForm] /* var only to construct cyclic reference */)
 
-  case class SyntaxForm(command: Command, childs: Seq[SyntaxSort], toLayout: ToLayout, toAst: ToAst)
+  case class SyntaxForm(command: Command, childs: Seq[SyntaxSort], toLayout: ToWidget, toAst: ToAst)
 
-  def SyntaxFormConstant(name: String, t: T) = SyntaxForm(ConstantCommand(name), Seq.empty, layouts.Inline1, (_, _) => t)
+  def SyntaxFormConstant(name: String, t: T) =
+    SyntaxForm(ConstantCommand(name), Seq.empty, layouts.Inline1, (_, _) => t)
 
-  def SyntaxFormApplicative1(name: String, c: SyntaxSort, toAst: ToAst) = SyntaxForm(ConstantCommand(name), Seq(c), layouts.Inline2, toAst)
+  def SyntaxFormApplicative1(name: String, c: SyntaxSort, toAst: ToAst) =
+    SyntaxForm(ConstantCommand(name), Seq(c), layouts.Inline2, toAst)
 
   case class Language(sorts: Seq[SyntaxSort], forms: Seq[SyntaxForm]) {
   }
@@ -178,9 +180,9 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
   }
 
   object layouts {
-    val Inline1 = ToLayout(0, seq => WCommand())
-    val Inline2 = ToLayout(1, seq => WSequence(WCommand(), WConstant(" "), seq.head))
-    val Default = ToLayout(-1, seq => WVertical(seq: _*))
+    val Inline1 = ToWidget(0, seq => WCommand())
+    val Inline2 = ToWidget(1, seq => WSequence(WCommand(), WConstant(" "), seq.head))
+    val Default = ToWidget(-1, seq => WVertical(seq: _*))
   }
 
 

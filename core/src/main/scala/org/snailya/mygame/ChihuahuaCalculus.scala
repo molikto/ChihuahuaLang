@@ -40,7 +40,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
     val Reference = SyntaxForm(
       AcceptanceCommand(s => true),
       Seq.empty,
-      ToLayout(0, seq => WCommand()),
+      ToWidget(0, seq => WCommand()),
       (c, seq) => CC.Binding(c)
     )
 
