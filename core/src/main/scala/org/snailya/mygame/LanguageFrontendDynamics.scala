@@ -38,7 +38,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
   def stateInsertAtNextHoleOrExit() = {
     // TODO make it better
     state.selection.get.commandBuffer = ""
-    val res = state.selection.get.linearizedNext(_.content.isEmpty)
+    val res = state.selection.get.linearizedNext(_.form.isEmpty)
     if (res.nonEmpty) state.selection = res
     else {
       state.isInsert = false
@@ -48,7 +48,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
   def stateCommitCommand(jump: Boolean): Unit = {
     assert(state.selection.nonEmpty)
     val selection = state.selection.get
-    assert(selection.content.isEmpty)
+    assert(selection.form.isEmpty)
     val command = selection.commandBuffer
     selection.commandBuffer = ""
     if (command.isEmpty) {
@@ -56,7 +56,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
     } else {
       Lang.forms.find(_.command.accept(command)) match {
         case Some(f) =>
-          selection.content = Some(f)
+          selection.form = Some(f)
           selection.command = command
           f.childs.foreach(_ => selection.appendNew())
           if (jump) stateInsertAtNextHoleOrExit()
@@ -84,7 +84,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
       if (state.isInsert) {
         if (keycode == Keys.ESCAPE) {
           if (state.selection.nonEmpty) {
-            if (state.selection.get.content.isEmpty) stateCommitCommand(false)
+            if (state.selection.get.form.isEmpty) stateCommitCommand(false)
             state.isInsert = false
             state.selection.get.commandBuffer = ""
             true
@@ -100,7 +100,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
         delog("key typed: " + Integer.toHexString(character.toInt))
         assert(state.selection.isDefined)
         val selected = state.selection.get
-        if (selected.content.isEmpty) {
+        if (selected.form.isEmpty) {
           if (character == ' ' || character == '\n') {
             stateCommitCommand(true)
           } else if (character == '\b') {
@@ -130,7 +130,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
             })
           case 'N' => // new empty child node
             state.selection.foreach(t => {
-              if (t.content.nonEmpty) {
+              if (t.form.nonEmpty) {
                 state.selection = Some(t.appendNew())
                 state.isInsert = true
               }
@@ -189,15 +189,15 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
             })
           case 'd' => // delete an item
             state.selection.foreach(t => {
-              if (t.childs.nonEmpty || t.content.nonEmpty) {
+              if (t.childs.nonEmpty || t.form.nonEmpty) {
                 val tt = t.moveContentOut()
-                t.content = None
+                t.form = None
                 t.childs.clear()
                 state.clipboard = Some(tt)
               }
               t.parent match {
                 case Some(p) =>
-                  val cap = p.content.map(_.toLayout.cap).getOrElse(-1)
+                  val cap = p.form.map(_.toLayout.cap).getOrElse(-1)
                   if (p.childs.size > cap) {
                     p.remove(t)
                     state.selection = Some(p)
@@ -209,7 +209,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
             state.selection.foreach(t => {
               state.clipboard match {
                 case Some(c) =>
-                  if (t.content.isEmpty && t.childs.isEmpty) {
+                  if (t.form.isEmpty && t.childs.isEmpty) {
                     t.copyContent(c)
                   } else {
                     val cc = c.copy()

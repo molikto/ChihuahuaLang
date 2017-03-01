@@ -170,7 +170,7 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
 
     override def measure0(tree: Tree) = {
       tree.commandLayout = this
-      val placeholderText = if (tree.commandBuffer.nonEmpty) tree.commandBuffer else if (tree.content.isEmpty) "?" else ""
+      val placeholderText = if (tree.commandBuffer.nonEmpty) tree.commandBuffer else if (tree.form.isEmpty) "?" else ""
       val text = if (placeholderText.nonEmpty) {
         color = PlaceholderColor
         placeholderText
@@ -186,7 +186,7 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
   }
 
 
-  class Tree(var content: Option[SyntaxForm]) {
+  class Tree(var form: Option[SyntaxForm]) {
 
     var command: String = ""
     val childs: mutable.Buffer[Tree] = mutable.ArrayBuffer.empty
@@ -197,13 +197,14 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
     var commandBuffer = ""
 
     // reset each time re-render
+    // so don't need to care about these in edit mode
     var commandLayout: WCommand = null
     var layout: Widget = null
 
     def measure(widthHint: Float): Unit = {
       // TODO not used now
       commandLayout = null
-      val transformer = content.map(_.toLayout).getOrElse(layouts.Inline1)
+      val transformer = form.map(_.toLayout).getOrElse(layouts.Inline1)
       val cwidgets = childs.map(a => {
         a.measure(widthHint)
         a.layout
@@ -218,10 +219,10 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
     }
 
     def ast(): (T, Seq[Error]) = {
-      val ret = if (content.isEmpty) {
+      val ret = if (form.isEmpty) {
         (newHole(), Seq.empty)
       } else {
-        val c = content.get
+        val c = form.get
 //        def sortMismatchError(tree: Tree, s: SyntaxSort) = {
 //          Error(tree, "sort mismatch, expecting " + s.name)
 //        }
@@ -242,13 +243,13 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
         append(cc)
       }
       c.childs.clear()
-      content = c.content
+      form = c.form
       command = c.command
     }
 
     def moveContentOut(): Tree = {
-      val cc = new Tree(content)
-      content = None
+      val cc = new Tree(form)
+      form = None
       cc.command = this.command
       this.command = ""
       cc.childs ++= childs.map(t => t.copy(Some(cc)))
@@ -257,7 +258,7 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
     }
 
     def copy(p: Option[Tree]): Tree = {
-      val cc = new Tree(content)
+      val cc = new Tree(form)
       cc.parent = p
       cc.command = this.command
       cc.childs ++= childs.map(t => t.copy(Some(cc)))
