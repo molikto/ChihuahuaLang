@@ -1,7 +1,9 @@
 # ChihuahuaLang
 
 
-reasons this project exists: *correct by construction syntax is a myth. we don't need it and it is harmful*. it is too strict. instead, use **loosely typed** tree. the node has a potential type, but the childs and child count is not rigid
+reasons this project exists:
+
+to experiment a new idea about strutural editor: *correct by construction syntax is a myth. we don't need it and it is harmful*. it is too strict. instead, use **loosely typed** tree. the node has a potential type, but the childs and child count is not rigid
 
 
 ## design
