@@ -30,10 +30,16 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
       BindingOptionalTypeSort
     )
 
-//    val BindingOptionalType = SyntaxForm(
-//      ConstantCommand("::"),
-//      Seq(BindingSort),
-//    )
+    val BindingOptionalType = SyntaxForm(
+      ConstantCommand("::"),
+      Seq(
+        ChildRelationship(BindingSort, 1, 1),
+        ChildRelationship(TypeSort, 0, 1)
+      ),
+      seq => WVertical(seq: _*),
+      (c, seq) => null
+    )
+
 //    val Lambda = SyntaxForm(
 //      ConstantCommand("\\"),
 //      Seq(BindingOptionalTypeSort),
