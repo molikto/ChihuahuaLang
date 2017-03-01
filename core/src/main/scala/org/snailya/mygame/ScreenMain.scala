@@ -16,6 +16,6 @@ import com.badlogic.gdx.scenes.scene2d.ui.TextField.TextFieldStyle
 import scala.collection.mutable
 
 
-class ScreenMain extends ScreenBase with UntypedLambdaCalculus.Frontend {
+class ScreenMain extends ScreenBase with ChihuahuaCalculus.Frontend {
   override def render(delta: Float) = super.renderFrontend(delta)
 }

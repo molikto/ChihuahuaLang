@@ -8,7 +8,7 @@ object UntypedLambdaCalculus {
   abstract class Ast extends AstBase
   case class Application(left: Ast, right: Ast) extends Ast
   abstract class Referential extends Ast
-  case class Lambda(left: Referential, right: Ast) extends Ast
+  case class Lambda1(left: Referential, right: Ast) extends Ast
   case class Reference(name: String) extends Referential
   case class Hole() extends Referential
   case class Definition(name: Referential, right: Ast) extends Ast
@@ -36,7 +36,7 @@ object UntypedLambdaCalculus {
       ConstantCommand("\\"),
       Seq(Binding, Term),
       ToLayout(2, seq => WSequence(WCommand("λ"), WConstant(" "), seq(0), WConstant(" ⇒ "), seq(1))),
-      (c, seq) => ULC.Lambda(seq(0).asInstanceOf[Referential], seq(1))
+      (c, seq) => ULC.Lambda1(seq(0).asInstanceOf[Referential], seq(1))
     )
 
     val Reference = SyntaxForm(
