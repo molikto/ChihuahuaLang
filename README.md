@@ -1,12 +1,7 @@
 # ChihuahuaLang
 
 
-reasons this project exists:
-
-
-*  use **loosely typed** tree. the node has a potential type, but the childs and child count is not rigid
-    *  *correct by construction syntax is a myth. we don't need it and it is harmful*. it is too strict
-    * textural editor is bad
+reasons this project exists: *correct by construction syntax is a myth. we don't need it and it is harmful*. it is too strict. instead, use **loosely typed** tree. the node has a potential type, but the childs and child count is not rigid
 
 
 ## design
