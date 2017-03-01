@@ -8,7 +8,7 @@ import org.snailya.mygame.GameWrapper;
 public class DesktopLauncher {
 	public static void main (String[] arg) {
 		Lwjgl3ApplicationConfiguration cfg = new Lwjgl3ApplicationConfiguration();
-		cfg.setTitle("MyGame");
+		cfg.setTitle("Chihuahua Language");
 		cfg.setHdpiMode(Lwjgl3ApplicationConfiguration.HdpiMode.Pixels);
 		// http://www.glfw.org/docs/latest/intro_guide.html
 		// these is in screen coordinates

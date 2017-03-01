@@ -18,7 +18,7 @@ import scala.collection.mutable
 /**
   * Created by molikto on 27/02/2017.
   */
-trait LanguageFrontendDynamics[T <: AstBase, H <: T] extends LanguageFrontend[T, H] {
+trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends LanguageFrontend[T, H] {
 
 
   object state {
@@ -29,16 +29,11 @@ trait LanguageFrontendDynamics[T <: AstBase, H <: T] extends LanguageFrontend[T,
     var hPosition: Float = -1F
 
     var errors: Seq[Error] = Seq.empty
-
   }
-
-
 
   /**
     * UI
     */
-
-
 
   def stateInsertAtNextHoleOrExit() = {
     // TODO make it better
@@ -232,8 +227,6 @@ trait LanguageFrontendDynamics[T <: AstBase, H <: T] extends LanguageFrontend[T,
   })
 
   var needsRender = true
-
-  import style._
 
   def renderFrontend(delta: Float) = {
     if (needsRender) {

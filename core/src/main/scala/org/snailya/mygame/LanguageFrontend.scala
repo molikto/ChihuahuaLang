@@ -16,56 +16,33 @@ import com.badlogic.gdx.scenes.scene2d.ui.TextField.TextFieldStyle
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 
-/**
-  * Created by molikto on 27/02/2017.
-  */
-abstract class AstBase {
+abstract class AstBaseWithPositionData {
   var data: Object = null
+  // this is a hack now, in case of textural language, it will be something like (line, char)...
 }
-trait LanguageFrontend[T <: AstBase, H <: T] {
+
+// base class for a frontend of a programming language with AST type T and a subtype of T which is a hole
+// we don't support multi-sorted language, this makes little sense now because we want to support mal-shaped ast
+trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFrontendStyle {
+
+  case class Error(t: Object, s: String) {
+    def cast: Tree = t.asInstanceOf[Tree] // this is the only type cast we use now
+  }
 
   val Lang: Language
 
-  case class Error(t: Object, s: String) {
-    def cast: Tree = t.asInstanceOf[Tree]
-  }
-
-
-  def compile(l: T): Either[String, Seq[Error]]
-
   def newHole(): H
 
-  val Font = DebugFont20
-
-  /**
-    * style
-    */
-  object style {
-    val BackgroundColor = DefaultBgColor
-    val SelectionColor = new Color(0xFFFFFF33)
-    val EditingColor = new Color(0x3c963d66)
-    val ErrorColor = new Color(0xe3322d33)
-    val PlaceholderColor = new Color(0xFFFFFF77)
-    val Size8 = size(8)
-    val ItemIndent = size(20)
-  }
-
-
-
-
-
-  import style._
-
-  /**
-    * Keys
-    */
+  def compile(l: T): Either[String, Seq[Error]]
 
   abstract class Command() {
     def accept(s: String): Boolean
   }
+
   case class ConstantCommand(s: String) extends Command {
     def accept(a: String) = a == s
   }
+
   case class AcceptanceCommand(s: String => Boolean) extends Command {
     def accept(a: String) = s(a)
   }
@@ -78,8 +55,11 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
 
   case class SyntaxForm(command: Command, childs: Seq[SyntaxSort], toLayout: ToLayout, toAst: ToAst)
 
-  case class Language(sorts: Seq[SyntaxSort], forms: Seq[SyntaxForm]) {
+  def SyntaxFormConstant(name: String, t: T) = SyntaxForm(ConstantCommand(name), Seq.empty, layouts.Inline1, (_, _) => t)
 
+  def SyntaxFormApplicative1(name: String, c: SyntaxSort, toAst: ToAst) = SyntaxForm(ConstantCommand(name), Seq(c), layouts.Inline2, toAst)
+
+  case class Language(sorts: Seq[SyntaxSort], forms: Seq[SyntaxForm]) {
   }
 
   abstract class Widget() {
@@ -119,13 +99,13 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
     }
   }
 
-
   abstract class WIndentAbs extends Widget {
     override def measure0(t: Tree) = {
       width = ItemIndent
       height = 0
     }
   }
+
   object WIndent extends WIndentAbs
 
   case class WSequence(seq: Widget*) extends Widget {
@@ -204,15 +184,7 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
   }
 
 
-  def SyntaxFormConstant(name: String, t: T) = SyntaxForm(ConstantCommand(name), Seq.empty, layouts.Inline1, (_, _) => t)
-
-  def SyntaxFormApplicative1(name: String, c: SyntaxSort, toAst: ToAst) = SyntaxForm(ConstantCommand(name), Seq(c), layouts.Inline2, toAst)
-
-
-
-
   class Tree(var content: Option[SyntaxForm]) {
-
 
     var command: String = ""
     val childs: mutable.Buffer[Tree] = mutable.ArrayBuffer.empty
@@ -248,33 +220,13 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
         (newHole(), Seq.empty)
       } else {
         val c = content.get
-        def sortMismatchError(tree: Tree, s: SyntaxSort) = {
-          Error(tree, "sort mismatch, expecting " + s.name)
-        }
-        val mapped: Seq[Either[Tree, Error]] = if (c.toLayout.cap >= 0) {
-          val samel = childs.take(c.toLayout.cap)
-          samel.zip(c.childs).map(pair => {
-            if (pair._1.content.isEmpty || pair._2.forms.contains(pair._1.content.get)) {
-              Left(pair._1)
-            } else {
-              Right(sortMismatchError(pair._1, pair._2))
-            }
-          })
-        } else {
-          val sp = c.childs.head
-          childs.map(a => if (a.content.isEmpty || sp.forms.contains(a.content.get)) Left(a) else Right(sortMismatchError(a, sp)))
-        }
-        val wrongSortErrors: Seq[Error] = mapped.flatMap {
-          case Left(_) => None
-          case Right(a) => Some(a)
-        }
-        val cast: Seq[(T, Seq[Error])] = mapped.map {
-          case Left(t) => t.ast()
-          case _ => (newHole(), Seq.empty)
-        }
+//        def sortMismatchError(tree: Tree, s: SyntaxSort) = {
+//          Error(tree, "sort mismatch, expecting " + s.name)
+//        }
+       val cast: Seq[(T, Seq[Error])] = childs.take(if (c.toLayout.cap>= 0) c.toLayout.cap else childs.size).map(_.ast())
         val remain = if (c.toLayout.cap >= 0) childs.drop(c.toLayout.cap) else Seq.empty
         val ast = c.toAst.apply(command, cast.map(_._1))
-        val errors = wrongSortErrors ++ cast.flatMap(_._2) ++ remain.map(a => Error(a, "redundant term"))
+        val errors = cast.flatMap(_._2) ++ remain.map(a => Error(a, "redundant term"))
         (ast, errors)
       }
       ret._1.data = this
@@ -337,7 +289,6 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
           None
       }
     }
-
 
     def last(): Tree = {
       if (childs.isEmpty) this

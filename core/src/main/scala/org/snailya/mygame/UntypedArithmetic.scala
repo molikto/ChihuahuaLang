@@ -3,7 +3,7 @@ package org.snailya.mygame
 
 object UntypedArithmetic {
 
-  abstract class Ast extends AstBase {
+  abstract class Ast extends AstBaseWithPositionData {
   }
   case object True extends Ast
   case object False extends Ast
