@@ -47,7 +47,7 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
     def accept(a: String) = s(a)
   }
 
-  case class ToWidget(cap: Int, fun: Seq[Widget] => Widget)
+  type ToWidget = Seq[Widget] => Widget
 
   type ToAst = (String, Seq[T]) => T
 
@@ -192,9 +192,9 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
   }
 
   object layouts {
-    val Inline1 = ToWidget(0, seq => WCommand())
-    val Inline2 = ToWidget(1, seq => WSequence(WCommand(), WConstant(" "), seq.head))
-    val Default = ToWidget(-1, seq => WVertical(seq: _*))
+    val Inline1: ToWidget = seq => WCommand()
+    val Inline2: ToWidget = seq => WSequence(WCommand(), WConstant(" "), seq.head)
+    val Default: ToWidget = seq => WVertical(seq: _*)
   }
 
 
@@ -216,11 +216,11 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
     def measure(widthHint: Float): Unit = {
       // TODO not used now
       commandLayout = null
-      val transformer = form.map(_.toLayout).getOrElse(layouts.Inline1)
+      val (min, max, transformer) = form.map(a => (a.min, a.max, a.toLayout)).getOrElse((0, 0, layouts.Inline1))
       val cwidgets = childs.map(a => { a.measure(widthHint); a.layout })
-      layout = transformer.fun(cwidgets)
-      if (transformer.cap >= 0 && transformer.cap < childs.size) {
-        layout = layouts.Default.fun(Seq(layout, WSequence(WIndent, WVertical(cwidgets.drop(transformer.cap): _*))))
+      layout = transformer(cwidgets)
+      if (max < childs.size) {
+        layout = layouts.Default(Seq(layout, WSequence(WIndent, WVertical(cwidgets.drop(max): _*))))
       }
       // this will measure the rest of the elements just created by the transformer
       // also one child might set the command layout property
@@ -232,8 +232,8 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
         (newHole(), Seq.empty)
       } else {
         val c = form.get
-       val cast: Seq[(T, Seq[Error])] = childs.take(if (c.toLayout.cap>= 0) c.toLayout.cap else childs.size).map(_.ast())
-        val remain = if (c.toLayout.cap >= 0) childs.drop(c.toLayout.cap) else Seq.empty
+        val cast: Seq[(T, Seq[Error])] = childs.take(c.max).map(_.ast())
+        val remain = childs.drop(c.max)
         val ast = c.toAst.apply(command, cast.map(_._1))
         val errors = cast.flatMap(_._2) ++ remain.map(a => Error(a, "redundant term"))
         (ast, errors)

@@ -72,14 +72,14 @@ object UntypedArithmetic {
     val True = SyntaxFormConstant("true", UAA.True)
     val False = SyntaxFormConstant("false", UAA.False)
     val IfThenElse = SyntaxForm(ConstantCommand("if"), Seq(Term, Term, Term).map(a => ChildRelationship(a, 1, 1)),
-      ToWidget(3, (seq) => {
+      seq => {
         WVertical(
           WSequence(WCommand(), WConstant(" "), seq(0)),
           WSequence(WIndent, seq(1)),
           WConstant("else"),
           WSequence(WIndent, seq(2))
         )
-      }),
+      },
       (name, childs) => UAA.If(childs(0), childs(1), childs(2))
     )
     val Succ = SyntaxFormApplicative1("succ", Term, (_, a) => UAA.Succ(a(0)))

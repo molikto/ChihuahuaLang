@@ -58,7 +58,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
     val Reference = SyntaxForm(
       AcceptanceCommand(s => true),
       Seq.empty,
-      ToWidget(0, seq => WCommand()),
+      seq => WCommand(),
       (c, seq) => CC.Binding(c)
     )
 
@@ -86,7 +86,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
         Integer.parseInt(s)
       }.isSuccess),
       Seq.empty,
-      ToWidget(0, _ => WCommand()),
+      _ => WCommand(),
       (c, seq) => CC.PrimIntConstant(Integer.parseInt(c))
     )
 

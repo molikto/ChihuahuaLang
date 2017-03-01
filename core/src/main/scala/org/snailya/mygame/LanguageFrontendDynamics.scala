@@ -187,7 +187,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
               }
               t.parent match {
                 case Some(p) =>
-                  val cap = p.form.map(_.toLayout.cap).getOrElse(-1)
+                  val cap = p.form.map(_.min).getOrElse(0)
                   if (p.childs.size > cap) {
                     p.remove(t)
                     state.selection = Some(p)
@@ -252,7 +252,9 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
       val glyph = Font.measure(p.s)
       Font.draw(screenPixelWidth - Size8 - glyph.width, p.cast.layout.absY, p.s)
     }
-    delog("remeasure " + (timeMeasureEnd - timeStart) / 1000000 + "ms; redrawn " + (System.nanoTime() - timeMeasureEnd) / 1000000 + "ms")
+    val t1 = (timeMeasureEnd - timeStart) / 1000000
+    val t2 = (System.nanoTime() - timeMeasureEnd) / 1000000
+    if (t1 != 0 || t2 != 0) delog("remeasure " + t1 + "ms; redrawn " + t2 + "ms")
     end()
   }
 }
