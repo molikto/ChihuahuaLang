@@ -62,20 +62,14 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
   }
 
   Gdx.input.setInputProcessor(new InputProcessor {
-
     override def touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int) = false
-
     override def mouseMoved(screenX: Int, screenY: Int) = false
-
     override def touchUp(screenX: Int, screenY: Int, pointer: Int, button: Int) = false
-
     override def touchDragged(screenX: Int, screenY: Int, pointer: Int) = false
-
     override def scrolled(amount: Int) = false
-
     override def keyDown(keycode: Int) = false
 
-    override def keyUp(keycode: Int) = {
+    override def keyUp(keycode: Int): Boolean = {
       needsRemeasure = true
       if (state.isInsert) {
         if (keycode == Keys.ESCAPE) {
@@ -83,7 +77,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
             if (state.selection.get.form.isEmpty) commitCommand(false)
             state.isInsert = false
             state.selection.get.commandBuffer = ""
-            true
+            return true
           }
         }
       }
