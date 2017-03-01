@@ -80,7 +80,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
     override def keyDown(keycode: Int) = false
 
     override def keyUp(keycode: Int) = {
-      needsRender = true
+      needsRemeasure = true
       if (state.isInsert) {
         if (keycode == Keys.ESCAPE) {
           if (state.selection.nonEmpty) {
@@ -95,7 +95,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
     }
 
     override def keyTyped(character: Char) = {
-      needsRender = true
+      needsRemeasure = true
       if (state.isInsert) {
         delog("key typed: " + Integer.toHexString(character.toInt))
         assert(state.selection.isDefined)
@@ -226,25 +226,21 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
     }
   })
 
-  var needsRender = true
+  var needsRemeasure = true
 
   def renderFrontend(delta: Float) = {
-    if (needsRender) {
-      needsRender = false
-      var t = System.nanoTime()
-
+    val timeStart = System.nanoTime()
+    var timeMeasureEnd = timeStart
+    if (needsRemeasure) {
+      needsRemeasure = false
       // compile information
       val (ast, lerrors) = state.root.ast()
       val res = compile(ast)
-      state.errors = (lerrors ++ (res match {
+      state.errors = lerrors ++ (res match {
         case Left(_) => Seq.empty
         case Right(a) => a
-      }))
+      })
 
-
-      // measure and rendering
-      clearColor(BackgroundColor)
-      begin()
       state.root.measure(screenPixelWidth - Size8 * 2)
 
       for (p <- state.errors) {
@@ -255,14 +251,18 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
         a.layout.bg = SelectionColor
         a.commandLayout.bg = if (state.isInsert) EditingColor else SelectionColor
       })
-      state.root.layout.draw(Size8, Size8)
 
-      for (p <- state.errors) {
-        val glyph = Font.measure(p.s)
-        Font.draw(screenPixelWidth - Size8 - glyph.width, p.cast.layout.absY, p.s)
-      }
-      delog("redrawn " + (System.nanoTime() - t) / 1000000 + "ms")
-      end()
+      timeMeasureEnd = System.nanoTime()
     }
+
+    clearColor(BackgroundColor)
+    begin()
+    state.root.layout.draw(Size8, Size8)
+    for (p <- state.errors) {
+      val glyph = Font.measure(p.s)
+      Font.draw(screenPixelWidth - Size8 - glyph.width, p.cast.layout.absY, p.s)
+    }
+    delog("remeasure " + (timeMeasureEnd - timeStart) / 1000000 + "ms; redrawn " + (System.nanoTime() - timeMeasureEnd) / 1000000 + "ms")
+    end()
   }
 }

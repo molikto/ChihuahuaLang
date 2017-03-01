@@ -9,8 +9,6 @@ to experiment a new idea about strutural editor: *correct by construction syntax
 ## design
 
 
-### `Tree` and `SyntaxForm`
-
 the central editing block as `Tree`, roughly `{content: T, childs: Seq[Tree]}`. not a specific typed `Ast`
  (abstract **syntax** tree), only a tree.
 

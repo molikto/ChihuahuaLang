@@ -59,6 +59,7 @@ class MyGame extends MyGameStyle {
 
   def resize(width: Int, height: Int): Unit = {
     if (current != null) current.resize(width, height)
+    batch.getProjectionMatrix.setToOrtho2D(0, 0, screenPixelWidth, screenPixelHeight)
   }
 
 

@@ -205,10 +205,7 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
       // TODO not used now
       commandLayout = null
       val transformer = form.map(_.toLayout).getOrElse(layouts.Inline1)
-      val cwidgets = childs.map(a => {
-        a.measure(widthHint)
-        a.layout
-      })
+      val cwidgets = childs.map(a => { a.measure(widthHint); a.layout })
       layout = transformer.fun(cwidgets)
       if (transformer.cap >= 0 && transformer.cap < childs.size) {
         layout = layouts.Default.fun(Seq(layout, WSequence(WIndent, WVertical(cwidgets.drop(transformer.cap): _*))))
@@ -223,9 +220,6 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
         (newHole(), Seq.empty)
       } else {
         val c = form.get
-//        def sortMismatchError(tree: Tree, s: SyntaxSort) = {
-//          Error(tree, "sort mismatch, expecting " + s.name)
-//        }
        val cast: Seq[(T, Seq[Error])] = childs.take(if (c.toLayout.cap>= 0) c.toLayout.cap else childs.size).map(_.ast())
         val remain = if (c.toLayout.cap >= 0) childs.drop(c.toLayout.cap) else Seq.empty
         val ast = c.toAst.apply(command, cast.map(_._1))
