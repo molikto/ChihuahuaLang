@@ -16,7 +16,7 @@ import com.badlogic.gdx.scenes.scene2d.ui.TextField.TextFieldStyle
 import scala.collection.mutable
 
 /**
-  * Created by molikto on 27/02/2017.
+  * this class holds the global state object and have the rendering method
   */
 trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends LanguageFrontend[T, H] {
 
@@ -31,11 +31,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
     var errors: Seq[Error] = Seq.empty
   }
 
-  /**
-    * UI
-    */
-
-  def stateInsertAtNextHoleOrExit() = {
+  def insertAtNextHoleOrExit() = {
     // TODO make it better
     state.selection.get.commandBuffer = ""
     val res = state.selection.get.linearizedNext(_.form.isEmpty)
@@ -45,7 +41,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
     }
   }
 
-  def stateCommitCommand(jump: Boolean): Unit = {
+  def commitCommand(jump: Boolean): Unit = {
     assert(state.selection.nonEmpty)
     val selection = state.selection.get
     assert(selection.form.isEmpty)
@@ -59,7 +55,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
           selection.form = Some(f)
           selection.command = command
           f.childs.foreach(_ => selection.appendNew())
-          if (jump) stateInsertAtNextHoleOrExit()
+          if (jump) insertAtNextHoleOrExit()
         case None =>
       }
     }
@@ -84,7 +80,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
       if (state.isInsert) {
         if (keycode == Keys.ESCAPE) {
           if (state.selection.nonEmpty) {
-            if (state.selection.get.form.isEmpty) stateCommitCommand(false)
+            if (state.selection.get.form.isEmpty) commitCommand(false)
             state.isInsert = false
             state.selection.get.commandBuffer = ""
             true
@@ -102,7 +98,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
         val selected = state.selection.get
         if (selected.form.isEmpty) {
           if (character == ' ' || character == '\n') {
-            stateCommitCommand(true)
+            commitCommand(true)
           } else if (character == '\b') {
             if (selected.commandBuffer.nonEmpty) selected.commandBuffer = selected.commandBuffer.dropRight(1)
           } else if (character >= '!' && character <= '~') {
