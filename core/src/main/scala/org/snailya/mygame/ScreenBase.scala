@@ -26,7 +26,6 @@ trait ScreenBase {
 
   def resize(width: Int, height: Int) = {
     stage.getViewport.update(width, height, true)
-    if (!Gdx.graphics.isContinuousRendering) Gdx.graphics.requestRendering()
   }
 
   def dispose(): Unit = {
