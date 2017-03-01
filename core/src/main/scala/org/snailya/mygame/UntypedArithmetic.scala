@@ -71,7 +71,7 @@ object UntypedArithmetic {
     val Term = SyntaxSort("term", null)
     val True = SyntaxFormConstant("true", UAA.True)
     val False = SyntaxFormConstant("false", UAA.False)
-    val IfThenElse = SyntaxForm(ConstantCommand("if"), Seq(Term, Term, Term),
+    val IfThenElse = SyntaxForm(ConstantCommand("if"), Seq(Term, Term, Term).map(a => ChildRelationship(a, 1, 1)),
       ToWidget(3, (seq) => {
         WVertical(
           WSequence(WCommand(), WConstant(" "), seq(0)),

@@ -1,6 +1,7 @@
 package org.snailya.mygame
 
-import org.snailya.mygame.UntypedLambdaCalculus.Lambda1
+
+import scala.util.Try
 
 /**
   * Created by molikto on 01/03/2017.
@@ -11,31 +12,48 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
 
     val CC = ChihuahuaCalculus
 
-    val Term = SyntaxSort("term", null)
+    val TermSort = SyntaxSort("term", null)
 
-    val Binding = SyntaxSort("binding", null)
+    val BindingSort = SyntaxSort("binding", null)
 
-    val Type = SyntaxSort("type", null)
+    val TypeSort = SyntaxSort("type", null)
 
-    val TypeBinding = SyntaxSort("type binding", null)
+    val TypeBindingSort = SyntaxSort("type binding", null)
 
+    val BindingOptionalTypeSort = SyntaxSort("binding optional type", null)
 
-//    val Application = SyntaxForm(
-//      ConstantCommand("("),
-//      Seq(Term, Term),
-//      ToLayout(
-//        2,
-//        seq => WSequence(WCommand(), seq(0), WConstant(" "), seq(1), WConstant(")"))
-//      ),
-//      (c, seq) => CC.Application(seq(0), seq(1))
+    val Sorts = Seq(
+      TermSort,
+      BindingSort,
+      TypeSort,
+      TypeBindingSort,
+      BindingOptionalTypeSort
+    )
+
+//    val BindingOptionalType = SyntaxForm(
+//      ConstantCommand("::"),
+//      Seq(BindingSort),
 //    )
-//
 //    val Lambda = SyntaxForm(
 //      ConstantCommand("\\"),
-//      Seq(Binding, Term),
-//      ToLayout(2, seq => WSequence(WCommand("λ"), WConstant(" "), seq(0), WConstant(" ⇒ "), seq(1))),
-//      (c, seq) => CC.Lambda(seq(0).asInstanceOf[ReferenceOrHole], seq(1))
+//      Seq(BindingOptionalTypeSort),
+//      ToWidget(-1, seq =>
+//        WSequence(
+//          Seq(WCommand("λ"), WConstant("(")) ++ seq.dropRight(1): _*),
+//      (c, seq) => CC.Lambda(seq(0), seq(1))
 //    )
+
+
+    //    val Application = SyntaxForm(
+    //      ConstantCommand("("),
+    //      Seq(Term, Term),
+    //      ToLayout(
+    //        2,
+    //        seq => WSequence(WCommand(), seq(0), WConstant(" "), seq(1), WConstant(")"))
+    //      ),
+    //      (c, seq) => CC.Application(seq(0), seq(1))
+    //    )
+    //
 
     val Reference = SyntaxForm(
       AcceptanceCommand(s => true),
@@ -63,14 +81,25 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
     )
     */
 
-    Term.forms = Seq(Reference)
+    val PrimIntConstant = SyntaxForm(
+      AcceptanceCommand(s => Try {
+        Integer.parseInt(s)
+      }.isSuccess),
+      Seq.empty,
+      ToWidget(0, _ => WCommand()),
+      (c, seq) => CC.PrimIntConstant(Integer.parseInt(c))
+    )
 
-    Binding.forms = Seq(Reference)
+    //    Term.forms = Seq(Reference)
+    //    Binding.forms = Seq(Reference)
 
-    override val Lang = Language(Seq(Term, Binding), Term.forms)
+    val Forms = Seq(Reference, PrimIntConstant)
+
+    override val Lang = Language(Sorts, Forms)
 
     override def compile(l: Ast) = Left("")
 
     override def newHole() = CC.Hole()
   }
+
 }

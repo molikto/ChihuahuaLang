@@ -53,13 +53,25 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
 
   case class SyntaxSort(name: String, var forms: Seq[SyntaxForm] /* var only to construct cyclic reference */)
 
-  case class SyntaxForm(command: Command, childs: Seq[SyntaxSort], toLayout: ToWidget, toAst: ToAst)
+  case class ChildRelationship(sort: SyntaxSort, min: Int, max: Int)
+
+  case class SyntaxForm(command: Command,
+    childs: Seq[ChildRelationship],
+    toLayout: ToWidget,
+    toAst: ToAst) {
+    assert (childs.count(a => a.min != a.max) <= 1)
+
+    val min = childs.map(_.min).sum
+
+    val max = childs.map(_.max).sum
+  }
+
 
   def SyntaxFormConstant(name: String, t: T) =
     SyntaxForm(ConstantCommand(name), Seq.empty, layouts.Inline1, (_, _) => t)
 
   def SyntaxFormApplicative1(name: String, c: SyntaxSort, toAst: ToAst) =
-    SyntaxForm(ConstantCommand(name), Seq(c), layouts.Inline2, toAst)
+    SyntaxForm(ConstantCommand(name), Seq(ChildRelationship(c, 1, 1)), layouts.Inline2, toAst)
 
   case class Language(sorts: Seq[SyntaxSort], forms: Seq[SyntaxForm]) {
   }

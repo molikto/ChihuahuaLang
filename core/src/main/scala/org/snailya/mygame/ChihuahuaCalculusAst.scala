@@ -23,7 +23,8 @@ trait ChihuahuaCalculusAst {
   /**
     * lambda
     */
-  case class Lambda(parameters: Seq[(Binding, Option[Type])], body: Term) extends Term
+  case class BindingOptionalType(binding: Binding, ty: Option[Type]) extends Ast
+  case class Lambda(parameters: Seq[BindingOptionalType],  body: Term) extends Term
   case class Application(left: Term, right: Seq[Term]) extends Term
 
   case class TypeFunction(left: Seq[Type], to: Type) extends Type
@@ -63,5 +64,9 @@ trait ChihuahuaCalculusAst {
   case class Let(bindings: Seq[Either[TermDef, TypeDef]], body: Term) extends Term
 
 
+  /**
+    * primitive
+    */
+  case class PrimIntConstant(i: Int) extends Term
 
 }
