@@ -31,7 +31,7 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
 
   def compile(l: T): Either[String, Seq[Error]]
 
-  def NewHole(): H
+  def newHole(): H
 
   val Font = DebugFont20
 
@@ -243,7 +243,7 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
 
     def ast(): (T, Seq[Error]) = {
       val ret = if (content.isEmpty) {
-        (NewHole(), Seq.empty)
+        (newHole(), Seq.empty)
       } else {
         val c = content.get
         def sortMismatchError(tree: Tree, s: SyntaxSort) = {
@@ -268,7 +268,7 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
         }
         val cast: Seq[(T, Seq[Error])] = mapped.map {
           case Left(t) => t.ast()
-          case _ => (NewHole(), Seq.empty)
+          case _ => (newHole(), Seq.empty)
         }
         val remain = if (c.toLayout.cap >= 0) childs.drop(c.toLayout.cap) else Seq.empty
         val ast = c.toAst.apply(command, cast.map(_._1))

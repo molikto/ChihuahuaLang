@@ -19,7 +19,7 @@ object UntypedArithmetic {
 
     def ddd(u: UAA.Ast) = u.data.asInstanceOf[Tree]
 
-    def NewHole() = UAA.Hole()
+    def newHole() = UAA.Hole()
 
     abstract class Type
     case object TypeBoolean extends Type

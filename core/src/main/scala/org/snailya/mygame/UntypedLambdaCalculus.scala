@@ -72,6 +72,6 @@ object UntypedLambdaCalculus {
 
     override def compile(l: Ast) = Left("")
 
-    override def NewHole() = ULC.Hole()
+    override def newHole() = ULC.Hole()
   }
 }

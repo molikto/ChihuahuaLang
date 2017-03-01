@@ -14,6 +14,8 @@ object ChihuahuaCalculus {
   abstract class Term extends Ast
   abstract class Type extends Ast
 
+  case class Hole() extends Ast
+
   case class Reference(name: String) extends Term
 
   case class TypeReference(name: String) extends Type
@@ -64,7 +66,6 @@ object ChihuahuaCalculus {
   case class TypeDef(name: TypeReference, t: Type)
   case class Let(bindings: Seq[Either[TermDef, TypeDef]], body: Term) extends Term
 
-  case class Hole() extends Ast
 
   trait Frontend extends LanguageFrontendDynamics[Ast, Hole] {
 
@@ -125,6 +126,6 @@ object ChihuahuaCalculus {
 
     override def compile(l: Ast) = Left("")
 
-    override def NewHole() = CC.Hole()
+    override def newHole() = CC.Hole()
   }
 }
