@@ -255,7 +255,7 @@ trait LanguageFrontendDynamics[T <: AstBase, H <: T] extends LanguageFrontend[T,
       state.root.measure(screenPixelWidth - Size8 * 2)
 
       for (p <- state.errors) {
-        p.t.layout.bg = ErrorColor
+        p.cast.layout.bg = ErrorColor
       }
 
       state.selection.foreach(a => {
@@ -266,7 +266,7 @@ trait LanguageFrontendDynamics[T <: AstBase, H <: T] extends LanguageFrontend[T,
 
       for (p <- state.errors) {
         val glyph = Font.measure(p.s)
-        Font.draw(screenPixelWidth - Size8 - glyph.width, p.t.layout.absY, p.s)
+        Font.draw(screenPixelWidth - Size8 - glyph.width, p.cast.layout.absY, p.s)
       }
       delog("redrawn " + (System.nanoTime() - t) / 1000000 + "ms")
       end()

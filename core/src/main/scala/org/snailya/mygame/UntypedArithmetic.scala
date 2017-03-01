@@ -17,8 +17,6 @@ object UntypedArithmetic {
   trait Frontend extends LanguageFrontendDynamics[UntypedArithmetic.Ast, UntypedArithmetic.Hole] {
     val UAA = UntypedArithmetic
 
-    def ddd(u: UAA.Ast) = u.data.asInstanceOf[Tree]
-
     def newHole() = UAA.Hole()
 
     abstract class Type
@@ -32,7 +30,7 @@ object UntypedArithmetic {
 
     def ensureType(a: UAA.Ast, t: Type): Seq[Error] = {
       val ires = infer(a)
-      val e = if (ires._1 == TypeAny || ires._1 == t) Seq.empty[Error] else Seq(Error(ddd(a), "expecting type " + t + ", but got " + ires._1))
+      val e = if (ires._1 == TypeAny || ires._1 == t) Seq.empty[Error] else Seq(Error(a.data, "expecting type " + t + ", but got " + ires._1))
       ires._2 ++ e
     }
 
@@ -57,7 +55,7 @@ object UntypedArithmetic {
           val te = if (rb._1 == TypeAny || rc._1 == TypeAny) {
             (TypeAny, Seq.empty[Error])
           } else if (rb._1 != rc._1) {
-            (TypeAny, Seq(Error(ddd(i), "two branch type mismatch")))
+            (TypeAny, Seq(Error(i.data, "two branch type mismatch")))
           } else {
             (rb._1, Seq.empty[Error])
           }

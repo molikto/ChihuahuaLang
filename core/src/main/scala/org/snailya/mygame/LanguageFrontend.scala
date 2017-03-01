@@ -26,7 +26,9 @@ trait LanguageFrontend[T <: AstBase, H <: T] {
 
   val Lang: Language
 
-  case class Error(t: Tree, s: String)
+  case class Error(t: Object, s: String) {
+    def cast: Tree = t.asInstanceOf[Tree]
+  }
 
 
   def compile(l: T): Either[String, Seq[Error]]

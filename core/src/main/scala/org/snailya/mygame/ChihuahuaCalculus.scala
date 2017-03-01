@@ -16,9 +16,9 @@ object ChihuahuaCalculus {
 
   case class Hole() extends Ast
 
-  case class Reference(name: String) extends Term
+  case class Binding(name: String) extends Term
 
-  case class TypeReference(name: String) extends Type
+  case class TypeBinding(name: String) extends Type
 
   case class Fix(t: Term) extends Term
 
@@ -27,7 +27,7 @@ object ChihuahuaCalculus {
   /**
     * lambda
     */
-  case class Lambda(parameters: Seq[(Reference, Option[Type])], body: Term) extends Term
+  case class Lambda(parameters: Seq[(Binding, Option[Type])], body: Term) extends Term
   case class Application(left: Term, right: Seq[Term]) extends Term
 
   case class TypeFunction(left: Seq[Type], to: Type) extends Type
@@ -44,7 +44,7 @@ object ChihuahuaCalculus {
     * variant
     */
   case class Tagging(name: String, term: Term) extends Term
-  case class Case(t: Term, cs: Seq[(String, Reference, Term)]) extends Term
+  case class Case(t: Term, cs: Seq[(String, Binding, Term)]) extends Term
 
   case class TypeVariant(vs: Seq[(String, Type)]) extends Type
 
@@ -62,9 +62,10 @@ object ChihuahuaCalculus {
   /**
     * let
     */
-  case class TermDef(name: Reference, Term: Term)
-  case class TypeDef(name: TypeReference, t: Type)
+  case class TermDef(name: Binding, Term: Term)
+  case class TypeDef(name: TypeBinding, t: Type)
   case class Let(bindings: Seq[Either[TermDef, TypeDef]], body: Term) extends Term
+
 
 
   trait Frontend extends LanguageFrontendDynamics[Ast, Hole] {
@@ -74,6 +75,11 @@ object ChihuahuaCalculus {
     val Term = SyntaxSort("term", null)
 
     val Binding = SyntaxSort("binding", null)
+
+    val Type = SyntaxSort("type", null)
+
+    val TypeBinding = SyntaxSort("type binding", null)
+
 
 //    val Application = SyntaxForm(
 //      ConstantCommand("("),
@@ -96,7 +102,7 @@ object ChihuahuaCalculus {
       AcceptanceCommand(s => true),
       Seq.empty,
       ToLayout(0, seq => WCommand()),
-      (c, seq) => CC.Reference(c)
+      (c, seq) => CC.Binding(c)
     )
 
     /* val Definition = SyntaxForm(
