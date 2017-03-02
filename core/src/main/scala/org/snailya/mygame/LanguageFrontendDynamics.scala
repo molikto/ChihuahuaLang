@@ -60,7 +60,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
             case Some(f) =>
               val index = p.indexOf(selection)
               val sort = f.sort(index, p.childs.size)
-              (sort.forms, true)
+              (sort.map(_.forms).getOrElse(Lang.forms), true)
           }
       }
       forms.find(_.command.accept(command).exists(_.eager)) match {
@@ -95,7 +95,8 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
             case Some(f) =>
               val index = p.indexOf(selection)
               val sort = f.sort(index, p.childs.size)
-              (sort.forms, true)
+              if (sort.isDefined) (sort.get.forms, true)
+              else (Lang.forms, false)
           }
       }
 
@@ -110,7 +111,13 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
           })
           if (jump) insertAtNextHoleOrExit()
         } else {
-          startInsert(None)
+          var hasNew = false
+          while (selection.size < f.min) {
+            hasNew = true
+            selection.appendNew()
+          }
+          if (hasNew && jump) insertAtNextHoleOrExit()
+          else startInsert(None)
         }
       }
 
@@ -299,13 +306,15 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
               } else {
                 true
               }
-              if (isEmpty) {
+              if (true && isEmpty) {
                 t.parent match {
                   case Some(p) =>
+                    val index = p.indexOf(t)
                     val cap = p.form.map(_.min).getOrElse(0)
                     if (p.size > cap) {
                       p.remove(t)
-                      state.selection = Some(p)
+                      if (index < p.size) state.selection = Some(p(index))
+                      else state.selection = Some(p)
                     }
                   case None =>
                 }

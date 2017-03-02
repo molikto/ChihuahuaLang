@@ -81,16 +81,18 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
 
     val footerSize = if (isFixed) 0 else childs.drop(varargsPosition + 1).map(_.max).sum
 
-    def sort(index: Int, size: Int) = if (index < headerSize) {
+    def sort(index: Int, size: Int): Option[SyntaxSort] = if (index >= max) {
+      None
+    } else if (index < headerSize) {
       var c = 0
       var j = 0
       while (index >= c) {
         c += childs(j).max
         j += 1
       }
-      childs(j - 1).sort
+      Some(childs(j - 1).sort)
     } else if (index - headerSize < size - footerSize) {
-      childs(varargsPosition).sort
+      Some(childs(varargsPosition).sort)
     } else {
       val findex = index - (size - footerSize)
       var c = 0
@@ -99,7 +101,7 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
         c += childs(j).max
         j += 1
       }
-      childs(j - 1).sort
+      Some(childs(j - 1).sort)
     }
   }
 

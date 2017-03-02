@@ -46,4 +46,16 @@ a keyboard stroke will produce
 1. their is no more empty string
 2. cursor position has became wired
 
+# copy pasting and re-assgin of meanings -- this has problem now
+
+# grow point
+
+there is more than trees.
+a `GrowPoint` is a special kind of tree such that
+1. a tree of form
+1. it is a placeholder and doesn't interface with the semantics
+1. it must be empty: no form, no childs, no content
+2. it will be hidden when cursor is not on it, but movement can still move to a grow point and
+you can potentially add more trees, they are always shown inside a tree
+
 

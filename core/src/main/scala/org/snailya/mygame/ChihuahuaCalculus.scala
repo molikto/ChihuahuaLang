@@ -38,12 +38,12 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
 
     val TypeBindingSort = SyntaxSort("type binding", null)
 
-    val BindingOptionalTypeSort = SyntaxSort("binding optional type", null)
+    val BindingAndTypeSort = SyntaxSort("binding optional type", null)
 
     def ensureBindingOptionalTypeSort(t: Ast): (BindingOptionalType, Seq[Error]) = t match {
       case b: BindingOptionalType => (b, Seq.empty)
       case h: AstHole => (CC.BindingOptionalType(BindingHole(), None), Seq.empty)
-      case a: Ast => (CC.BindingOptionalType(BindingHole(), None), mismatchError(a, BindingOptionalTypeSort))
+      case a: Ast => (CC.BindingOptionalType(BindingHole(), None), mismatchError(a, BindingAndTypeSort))
     }
 
     val Sorts = Seq(
@@ -51,25 +51,21 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
       BindingSort,
       TypeSort,
       TypeBindingSort,
-      BindingOptionalTypeSort
+      BindingAndTypeSort
     )
 
     val BindingCommand = AcceptanceCommand(s => Some(Acceptance(false)))
 
-    val BindingOptionalType = SyntaxForm(
+    val BindingAndType = SyntaxForm(
       BindingCommand,
       Seq(
-        ChildRelationship(TypeSort, 0, 1)
+        ChildRelationship(TypeSort, 1, 1)
       ),
       seq => WSequence(Seq(WCommand(), WConstant(": ")) ++ seq: _*),
       (c, seq) =>
-        if (seq.size <= 1) {
-          if (seq.size == 1) {
-            val (t, e2) = ensureTypeSort(seq.head)
-            (CC.BindingOptionalType(CC.BindingName(c), Some(t)), e2)
-          } else {
-            (CC.BindingOptionalType(CC.BindingName(c), None), Seq.empty)
-          }
+        if (seq.size == 1) {
+          val (t, e2) = ensureTypeSort(seq.head)
+          (CC.BindingOptionalType(CC.BindingName(c), Some(t)), e2)
         } else {
           throw new Exception()
         }
@@ -92,7 +88,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
     val Lambda = SyntaxForm(
       AcceptanceCommand(s => if (s == "\\") Some(Acceptance(true)) else if (s == "lam") Some(Acceptance(false)) else None),
       Seq(
-        ChildRelationship(BindingOptionalTypeSort, 0, MAX_BRANCH),
+        ChildRelationship(BindingAndTypeSort, 0, MAX_BRANCH),
         ChildRelationship(TermSort, 1, 1)
       ),
       seq =>
@@ -168,8 +164,8 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
       Binding
     )
 
-    BindingOptionalTypeSort.forms = Seq(
-      BindingOptionalType
+    BindingAndTypeSort.forms = Seq(
+      BindingAndType
     )
 
     BindingSort.forms = Seq(
@@ -186,7 +182,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
       PrimIntConstant,
       // bottom
       Binding,
-      BindingOptionalType)
+      BindingAndType)
 
     override val Lang = Language(Sorts, Forms)
 
