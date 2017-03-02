@@ -109,7 +109,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
               val n = selection.appendNew()
             }
           })
-          if (jump) insertAtNextHoleOrExit()
+          if (jump) insertAtNextHoleOrExit() else startInsert(None)
         } else {
           var hasNew = false
           while (selection.size < f.min) {
@@ -155,6 +155,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
                     }
                   })
                   if (jump) insertAtNextHoleOrExit()
+                  else startInsert(None)
                 case None =>
                   commitGlobal()
               }
@@ -181,7 +182,6 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
       if (state.isInsert) {
         if (keycode == Keys.ESCAPE) {
           if (state.selection.nonEmpty) {
-            if (state.selection.get.form.isEmpty) commitCommand(false)
             startInsert(None)
             state.selection.get.commandBuffer = ""
             return true
@@ -202,8 +202,10 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
         val selected = state.selection.get
         // TODO cursor movement
         // TODO support raw char input
-        if (character == ' ' || character == '\n') {
+        if (character == ' ') {
           commitCommand(true)
+        } else if (character == '\n') {
+          commitCommand(false)
         } else if (character == '\b') {
           if (selected.commandBuffer.nonEmpty) selected.commandBuffer = selected.commandBuffer.dropRight(1)
         } else if (character >= '!' && character <= '~') {
