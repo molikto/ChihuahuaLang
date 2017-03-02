@@ -95,7 +95,7 @@ object UntypedArithmetic {
       else isPositiveNumber(s)
     }
 
-    val Number = SyntaxForm(AcceptanceCommand(isNumber), Seq(), layouts.Inline1, (c, _) => emptyError(UAA.Number(BigInt(c))))
+    val Number = SyntaxForm(AcceptanceCommand(s => if (isNumber(s)) Some(Acceptance(false)) else None), Seq(), layouts.Inline1, (c, _) => emptyError(UAA.Number(BigInt(c))))
     Term.forms = Seq(True, False, IfThenElse, Number, Succ, Pred, IsZero)
     override val Lang = Language(Seq(Term), Term.forms)
   }

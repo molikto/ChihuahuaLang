@@ -54,37 +54,52 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
       BindingOptionalTypeSort
     )
 
+    val BindingCommand = AcceptanceCommand(s => Some(Acceptance(false)))
 
     val BindingOptionalType = SyntaxForm(
-      ConstantCommand("::", autoCreate = true), // not actually used most of time...
+      BindingCommand,
       Seq(
-        ChildRelationship(BindingSort, 1, 1),
         ChildRelationship(TypeSort, 0, 1)
       ),
-      seq => WVertical(seq.take(1) ++ Seq(WCommand()) ++ seq.drop(1): _*),
-      (_, seq) =>
-        if (seq.size <= 2) {
-          val (b, e1) = ensureBindingSort(seq.head)
-          if (seq.size == 2) {
-            val (t, e2) = ensureTypeSort(seq(1))
-            (CC.BindingOptionalType(b, Some(t)), e1 ++ e2)
+      seq => WSequence(Seq(WCommand(), WConstant(": ")) ++ seq: _*),
+      (c, seq) =>
+        if (seq.size <= 1) {
+          if (seq.size == 1) {
+            val (t, e2) = ensureTypeSort(seq.head)
+            (CC.BindingOptionalType(CC.BindingName(c), Some(t)), e2)
           } else {
-            (CC.BindingOptionalType(b, None), e1)
+            (CC.BindingOptionalType(CC.BindingName(c), None), Seq.empty)
           }
         } else {
           throw new Exception()
         }
     )
 
+    val Binding = SyntaxForm(
+      BindingCommand,
+      Seq.empty,
+      seq => WCommand(),
+      (c, seq) => emptyError(CC.BindingName(c))
+    )
+
+    val TypeBinding = SyntaxForm(
+      BindingCommand,
+      Seq.empty,
+      seq => WCommand(),
+      (c, seq) => emptyError(CC.TypeBindingName(c))
+    )
+
     val Lambda = SyntaxForm(
-      ConstantCommand("\\"),
+      AcceptanceCommand(s => if (s == "\\") Some(Acceptance(true)) else if (s == "lam") Some(Acceptance(false)) else None),
       Seq(
         ChildRelationship(BindingOptionalTypeSort, 0, MAX_BRANCH),
         ChildRelationship(TermSort, 1, 1)
       ),
       seq =>
         WSequence(
-          Seq(WCommand("λ"), WConstant("(")) ++ seq.dropRight(1) ++ Seq(WConstant(")  ⇒ "), seq.last): _*),
+          Seq(WCommand("λ"), WConstant("(")) ++
+            seq.dropRight(2).flatMap(v => Seq(v, WConstant(", "))) ++ seq.dropRight(1).takeRight(1) ++
+            Seq(WConstant(") ⇒ "), seq.last): _*),
       (_, seq) => {
         val bs = seq.dropRight(1).map(ensureBindingOptionalTypeSort)
         val bst = bs.map(_._1)
@@ -107,12 +122,6 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
     //
 
 
-    val Binding = SyntaxForm(
-      AcceptanceCommand(s => true),
-      Seq.empty,
-      seq => WCommand(),
-      (c, seq) => emptyError(CC.BindingName(c))
-    )
 
     /* val Definition = SyntaxForm(
       ConstantCommand("def"),
@@ -134,9 +143,9 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
     */
 
     val PrimIntConstant = SyntaxForm(
-      AcceptanceCommand(s => Try {
+      AcceptanceCommand(s => if (Try {
         Integer.parseInt(s)
-      }.isSuccess),
+      }.isSuccess) Some(Acceptance(false)) else None),
       Seq.empty,
       _ => WCommand(),
       (c, seq) => emptyError(CC.PrimIntConstant(Integer.parseInt(c)))
@@ -167,14 +176,17 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
       Binding
     )
 
-    TypeSort.forms = Seq()
+    TypeSort.forms = Seq(TypeBinding)
+
+    TypeBindingSort.forms = Seq(TypeBinding)
 
     val Forms = Seq(
-      BindingOptionalType, Lambda,
+      Lambda,
       // dynamic
       PrimIntConstant,
       // bottom
-      Binding)
+      Binding,
+      BindingOptionalType)
 
     override val Lang = Language(Sorts, Forms)
 

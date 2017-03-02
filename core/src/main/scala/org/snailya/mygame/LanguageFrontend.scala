@@ -35,15 +35,17 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
 
   def compile(l: T): Either[String, Seq[Error]]
 
+
+  case class Acceptance(eager: Boolean)
   abstract class Command() {
-    def accept(s: String): Boolean
+    def accept(s: String): Option[Acceptance]
   }
 
-  case class ConstantCommand(s: String, autoCreate: Boolean = false) extends Command {
-    def accept(a: String) = a == s
+  case class ConstantCommand(s: String, autoCreate: Boolean = false, acc: Acceptance = Acceptance(false)) extends Command {
+    def accept(a: String) = if (a == s) Some(acc) else None
   }
 
-  case class AcceptanceCommand(s: String => Boolean) extends Command {
+  case class AcceptanceCommand(s: String => Option[Acceptance]) extends Command {
     def accept(a: String) = s(a)
   }
 
@@ -303,7 +305,7 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
 
     def apply(i: Int) = childs(i)
 
-    def moveContentOut(): Tree = {
+    def moveContentAndChildOut(): Tree = {
       val cc = new Tree(form)
       form = None
       cc.command = this.command
