@@ -241,7 +241,6 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
             pt.form.foreach(f => {
               if (pt.size < f.max) {
                 f.childs.find(_.createCommand.contains(character)).foreach(rel => {
-                  println(f.footerSize)
                   val t = new Tree(None)
                   pt.insert(pt.size - f.footerSize, t)
                   state.selection = Some(t)
@@ -294,7 +293,9 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
           case 'N' => // new empty child node
             state.selection.foreach(t => {
               if (t.form.nonEmpty) {
-                state.selection = Some(t.appendNew())
+                val n = new Tree(None)
+                t.insert(t.form.get.headerSize, n)
+                state.selection = Some(n)
                 startInsert(Some(0))
               }
             })

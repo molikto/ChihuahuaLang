@@ -79,7 +79,7 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
 
     val max = childs.map(_.max).sum
 
-    val varargsPosition = childs.indexOf((k: ChildRelationship) => k.max != k.min)
+    val varargsPosition = childs.indexWhere(k => k.min != k.max)
 
     val isFixed = varargsPosition == -1
 
