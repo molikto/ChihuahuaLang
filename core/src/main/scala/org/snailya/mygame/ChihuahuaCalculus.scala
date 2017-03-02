@@ -34,6 +34,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
       case b: Type => (b, Seq.empty)
       case h: AstHole => (TypeHole(), Seq.empty)
       case a: Ast => (TypeHole(), mismatchError(a, TypeSort))
+
     }
 
     val TypeBindingSort = SyntaxSort("type binding", null)
@@ -54,16 +55,21 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
       BindingAndTypeSort
     )
 
+
+    override val commandDelimiter = Seq(':', ',')
+
     val BindingCommand = AcceptanceCommand(s => Some(Acceptance(false)))
 
     val BindingAndType = SyntaxForm(
       BindingCommand,
       Seq(
-        ChildRelationship(TypeSort, 0, 1)
+        ChildRelationship(TypeSort, 0, 1, 0, createCommand = Some(':'))
       ),
-      seq => WSequence(Seq(WCommand(), WConstant(": ")) ++ seq: _*),
+      seq => if (seq.isEmpty) WCommand() else WSequence(Seq(WCommand(), WConstant(": ")) ++ seq: _*),
       (c, seq) =>
-        if (seq.size == 1) {
+        if (seq.isEmpty) {
+          (CC.BindingOptionalType(CC.BindingName(c), None), Seq.empty)
+        } else if (seq.size == 1) {
           val (t, e2) = ensureTypeSort(seq.head)
           (CC.BindingOptionalType(CC.BindingName(c), Some(t)), e2)
         } else {
@@ -88,8 +94,8 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
     val Lambda = SyntaxForm(
       AcceptanceCommand(s => if (s == "\\") Some(Acceptance(true)) else if (s == "lam") Some(Acceptance(false)) else None),
       Seq(
-        ChildRelationship(BindingAndTypeSort, 0, MAX_BRANCH, sepCommand = Some(',')),
-        ChildRelationship(TermSort, 1, 1)
+        ChildRelationship(BindingAndTypeSort, 0, MAX_BRANCH, 1, sepCommand = Some(',')),
+        ChildRelationshipFixed(TermSort, 1)
       ),
       seq =>
         WSequence(

@@ -37,6 +37,7 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
 
 
   case class Acceptance(eager: Boolean)
+
   abstract class Command() {
     def accept(s: String): Option[Acceptance]
   }
@@ -55,11 +56,15 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
 
   case class SyntaxSort(name: String, var forms: Seq[SyntaxForm] /* var only to construct cyclic reference */)
 
-  case class ChildRelationship(sort: SyntaxSort, min: Int, max: Int,
+  case class ChildRelationship(sort: SyntaxSort, min: Int, max: Int, init: Int,
     sepCommand: Option[Char] = None,
-    endCommand: Option[Char] = None) {
+    createCommand: Option[Char] = None) {
     assert(max > 0 && min >= 0)
+
+    assert(max != min || (sepCommand.isEmpty && createCommand.isEmpty))
   }
+
+  def ChildRelationshipFixed(sort: SyntaxSort, c: Int) = ChildRelationship(sort, c, c, c)
 
   val MAX_BRANCH = Integer.MAX_VALUE / 100
 
@@ -68,16 +73,15 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
     toLayout: ToWidget,
     toAst: ToAst) {
 
-
     assert (childs.count(a => a.min != a.max) <= 1)
 
     val min = childs.map(_.min).sum
 
     val max = childs.map(_.max).sum
 
-    val varargsPosition = childs.indexOf((k: ChildRelationship) => k.min != k.max)
+    val varargsPosition = childs.indexOf((k: ChildRelationship) => k.max != k.min)
 
-    val isFixed = varargsPosition >= 0
+    val isFixed = varargsPosition == -1
 
     val headerSize = if (isFixed) max else childs.take(varargsPosition).map(_.max).sum
 
@@ -116,7 +120,7 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
     SyntaxForm(ConstantCommand(name), Seq.empty, layouts.Inline1, (_, _) => (t, Seq.empty))
 
   def SyntaxFormApplicative1(name: String, c: SyntaxSort, toAst: ToAst) =
-    SyntaxForm(ConstantCommand(name), Seq(ChildRelationship(c, 1, 1)), layouts.Inline2, toAst)
+    SyntaxForm(ConstantCommand(name), Seq(ChildRelationshipFixed(c, 1)), layouts.Inline2, toAst)
 
   case class Language(sorts: Seq[SyntaxSort], forms: Seq[SyntaxForm]) {
   }

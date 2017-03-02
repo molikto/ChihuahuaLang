@@ -71,7 +71,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
           selection.form = Some(f)
           selection.command = command
           f.childs.foreach(c => {
-            for (i <- 0 until (c.min max 1)) {
+            for (i <- 0 until c.init) {
               val n = selection.appendNew()
             }
           })
@@ -108,7 +108,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
         selection.command = command
         if (!hasFormBefore) { // TODO deal with has form before
           f.childs.foreach(c => {
-            for (i <- 0 until (c.min max 1)) {
+            for (i <- 0 until c.init) {
               val n = selection.appendNew()
             }
           })
@@ -148,7 +148,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
                   selection.form = Some(only)
                   selection.command = auto.get
                   only.childs.foreach(c => {
-                    for (i <- 0 until (c.min max 1)) {
+                    for (i <- 0 until c.init) {
                       val n = selection.appendNew()
                       if (c.min == 1) {
                         n.form = Some(f)
@@ -206,7 +206,8 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
         val selected = state.selection.get
         // TODO cursor movement
         // TODO support raw char input
-        if (commandDelimiterSeps.contains(character)) {
+
+        def tryCommandSep(s: Tree): Boolean = {
           var c = selected
           var p = selected.parent
           while (p.isDefined) {
@@ -217,8 +218,11 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
                   val index = pt.indexOf(c)
                   val sort = pt.form.get.relation(index, pt.size)
                   if (sort.exists(_._1 == rel)) {
-                    pt.insert(index + 1, new Tree(None))
-                    commitCommand(true)
+                    val t = new Tree(None)
+                    state.selection = Some(t)
+                    pt.insert(index + 1, t)
+                    commitCommand(true) // we want to finish current command
+                    startInsert(Some(0))
                     return true // ATTENTION: early return!!
                   }
                 })
@@ -227,6 +231,34 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
             c = pt
             p = pt.parent
           }
+          false
+        }
+
+        def tryCommandChild(s: Tree): Boolean = {
+          var p: Option[Tree] = Some(selected)
+          while (p.isDefined) {
+            val pt = p.get
+            pt.form.foreach(f => {
+              if (pt.size < f.max) {
+                f.childs.find(_.createCommand.contains(character)).foreach(rel => {
+                  println(f.footerSize)
+                  val t = new Tree(None)
+                  pt.insert(pt.size - f.footerSize, t)
+                  state.selection = Some(t)
+                  startInsert(Some(0))
+                  return true
+                })
+              }
+            })
+            p = pt.parent
+          }
+          false
+        }
+
+        if (commandDelimiter.contains(character)) { // current char is NOT part of the command buffer, it will end the command first and try to run the command
+          commitCommand(false)
+          if (tryCommandSep(selected)) return true
+          else if (tryCommandChild(selected)) return true
         }
         if (character == ' ') {
           commitCommand(true)
@@ -372,12 +404,9 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
   var inited = false
   var needsRemeasure = true
 
-  var commandDelimiterSeps: Seq[Char] = Seq.empty
+  val commandDelimiter: Seq[Char] = Seq.empty
 
   def renderFrontend(delta: Float) = {
-    if (!inited) {
-      commandDelimiterSeps = Lang.forms.flatMap(_.childs.flatMap(a => a.sepCommand))
-    }
     val timeStart = System.nanoTime()
     var timeMeasureEnd = timeStart
     if (needsRemeasure) {
