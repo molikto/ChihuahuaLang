@@ -26,4 +26,24 @@ the compiler consumes things
 of all the things we said above, `Tree` is a `object`, `SyntaxForm` is all constant. `Widget`s and `Ast` is value, and
 is functional. so almost all the states is contained in the `Tree` object
 
+# analysis of traditional editing
+
+text is a sequence of characters [0, n), when edit, their is a cursor position,[0, n]
+
+a keyboard stroke will produce
+  1. add char after the cursor, and move the cursor
+  2. delete the element before/after the cursor, and move the cursor
+  3. selection and copy paste
+
+# analysis tree editing
+
+1. selection: you can select a node,
+ but sometimes it is also helpful if you can select multiple child nodes of a node
+ then pasting is wired, suppose you are selecting a node, you can
+   1. paste the content in current node, if you only have one node to paste
+   2. paste the content as childs
+   3. paste the content as sibling
+1. their is no more empty string
+2. cursor position has became wired
+
 
