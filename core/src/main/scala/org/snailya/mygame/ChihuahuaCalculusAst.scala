@@ -6,15 +6,22 @@ package org.snailya.mygame
 trait ChihuahuaCalculusAst {
 
   abstract class Ast extends AstBaseWithPositionData
+  case class AstHole() extends Ast
 
   abstract class Term extends Ast
+  case class Hole() extends Term // when it construct a hole, it will be
+
   abstract class Type extends Ast
+  case class TypeHole() extends Type
 
-  case class Hole() extends Ast
 
-  case class Binding(name: String) extends Term
+  abstract class Binding() extends Term
+  case class BindingName(name: String) extends Binding
+  case class BindingHole() extends Binding
 
-  case class TypeBinding(name: String) extends Type
+  abstract class TypeBinding() extends Type
+  case class TypeBindingName(name: String) extends TypeBinding
+  case class TypeBindingHole() extends TypeBinding
 
   case class Fix(t: Term) extends Term
 
@@ -59,7 +66,7 @@ trait ChihuahuaCalculusAst {
   /**
     * let
     */
-  case class TermDef(name: Binding, Term: Term)
+  case class TermDef(name: BindingName, Term: Term)
   case class TypeDef(name: TypeBinding, t: Type)
   case class Let(bindings: Seq[Either[TermDef, TypeDef]], body: Term) extends Term
 

@@ -8,19 +8,43 @@ import scala.util.Try
   */
 object ChihuahuaCalculus extends ChihuahuaCalculusAst {
 
-  trait Frontend extends LanguageFrontendDynamics[Ast, Hole] {
+  trait Frontend extends LanguageFrontendDynamics[Ast, AstHole] {
 
     val CC = ChihuahuaCalculus
 
     val TermSort = SyntaxSort("term", null)
 
+    def ensureTermSort(t: Ast): (Term, Seq[Error]) = t match {
+      case b: Term => (b, Seq.empty)
+      case h: AstHole => (Hole(), Seq.empty)
+      case a: Ast => (Hole(), mismatchError(a, TermSort))
+    }
+
     val BindingSort = SyntaxSort("binding", null)
 
+    def ensureBindingSort(t: Ast): (Binding, Seq[Error]) = t match {
+      case b: BindingName => (b, Seq.empty)
+      case h: AstHole => (BindingHole(), Seq.empty)
+      case a: Ast => (BindingHole(), mismatchError(a, BindingSort))
+    }
+
     val TypeSort = SyntaxSort("type", null)
+
+    def ensureTypeSort(t: Ast): (Type, Seq[Error]) = t match {
+      case b: Type => (b, Seq.empty)
+      case h: AstHole => (TypeHole(), Seq.empty)
+      case a: Ast => (TypeHole(), mismatchError(a, TypeSort))
+    }
 
     val TypeBindingSort = SyntaxSort("type binding", null)
 
     val BindingOptionalTypeSort = SyntaxSort("binding optional type", null)
+
+    def ensureBindingOptionalTypeSort(t: Ast): (BindingOptionalType, Seq[Error]) = t match {
+      case b: BindingOptionalType => (b, Seq.empty)
+      case h: AstHole => (CC.BindingOptionalType(BindingHole(), None), Seq.empty)
+      case a: Ast => (CC.BindingOptionalType(BindingHole(), None), mismatchError(a, BindingOptionalTypeSort))
+    }
 
     val Sorts = Seq(
       TermSort,
@@ -30,24 +54,45 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
       BindingOptionalTypeSort
     )
 
+
     val BindingOptionalType = SyntaxForm(
-      ConstantCommand("::"),
+      ConstantCommand("::", autoCreate = true), // not actually used most of time...
       Seq(
         ChildRelationship(BindingSort, 1, 1),
         ChildRelationship(TypeSort, 0, 1)
       ),
-      seq => WVertical(seq: _*),
-      (c, seq) => null
+      seq => WVertical(seq.take(1) ++ Seq(WCommand()) ++ seq.drop(1): _*),
+      (_, seq) =>
+        if (seq.size <= 2) {
+          val (b, e1) = ensureBindingSort(seq.head)
+          if (seq.size == 2) {
+            val (t, e2) = ensureTypeSort(seq(1))
+            (CC.BindingOptionalType(b, Some(t)), e1 ++ e2)
+          } else {
+            (CC.BindingOptionalType(b, None), e1)
+          }
+        } else {
+          throw new Exception()
+        }
     )
 
-//    val Lambda = SyntaxForm(
-//      ConstantCommand("\\"),
-//      Seq(BindingOptionalTypeSort),
-//      ToWidget(-1, seq =>
-//        WSequence(
-//          Seq(WCommand("λ"), WConstant("(")) ++ seq.dropRight(1): _*),
-//      (c, seq) => CC.Lambda(seq(0), seq(1))
-//    )
+    val Lambda = SyntaxForm(
+      ConstantCommand("\\"),
+      Seq(
+        ChildRelationship(BindingOptionalTypeSort, 0, MAX_BRANCH),
+        ChildRelationship(TermSort, 1, 1)
+      ),
+      seq =>
+        WSequence(
+          Seq(WCommand("λ"), WConstant("(")) ++ seq.dropRight(1) ++ Seq(WConstant(")  ⇒ "), seq.last): _*),
+      (_, seq) => {
+        val bs = seq.dropRight(1).map(ensureBindingOptionalTypeSort)
+        val bst = bs.map(_._1)
+        val bse = bs.flatMap(_._2)
+        val (tm, te) = ensureTermSort(seq.last)
+        (CC.Lambda(bst, tm), bse ++ te)
+      }
+    )
 
 
     //    val Application = SyntaxForm(
@@ -61,11 +106,12 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
     //    )
     //
 
-    val Reference = SyntaxForm(
+
+    val Binding = SyntaxForm(
       AcceptanceCommand(s => true),
       Seq.empty,
       seq => WCommand(),
-      (c, seq) => CC.Binding(c)
+      (c, seq) => emptyError(CC.BindingName(c))
     )
 
     /* val Definition = SyntaxForm(
@@ -93,19 +139,49 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
       }.isSuccess),
       Seq.empty,
       _ => WCommand(),
-      (c, seq) => CC.PrimIntConstant(Integer.parseInt(c))
+      (c, seq) => emptyError(CC.PrimIntConstant(Integer.parseInt(c)))
     )
 
     //    Term.forms = Seq(Reference)
     //    Binding.forms = Seq(Reference)
 
-    val Forms = Seq(Reference, PrimIntConstant)
+//    val Sorts = Seq(
+//      TermSort,
+//      BindingSort,
+//      TypeSort,
+//      TypeBindingSort,
+//      BindingOptionalTypeSort
+//    )
+
+    TermSort.forms = Seq(
+      Lambda,
+      PrimIntConstant,
+      Binding
+    )
+
+    BindingOptionalTypeSort.forms = Seq(
+      BindingOptionalType
+    )
+
+    BindingSort.forms = Seq(
+      Binding
+    )
+
+    TypeSort.forms = Seq()
+
+    val Forms = Seq(
+      BindingOptionalType, Lambda,
+      // dynamic
+      PrimIntConstant,
+      // bottom
+      Binding)
 
     override val Lang = Language(Sorts, Forms)
 
     override def compile(l: Ast) = Left("")
 
-    override def newHole() = CC.Hole()
+    override def newHole() = CC.AstHole()
+
   }
 
 }

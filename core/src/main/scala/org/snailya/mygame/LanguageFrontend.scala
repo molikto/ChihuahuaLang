@@ -39,7 +39,7 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
     def accept(s: String): Boolean
   }
 
-  case class ConstantCommand(s: String) extends Command {
+  case class ConstantCommand(s: String, autoCreate: Boolean = false) extends Command {
     def accept(a: String) = a == s
   }
 
@@ -49,26 +49,61 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
 
   type ToWidget = Seq[Widget] => Widget
 
-  type ToAst = (String, Seq[T]) => T
+  type ToAst = (String, Seq[T]) => (T, Seq[Error])
 
   case class SyntaxSort(name: String, var forms: Seq[SyntaxForm] /* var only to construct cyclic reference */)
 
-  case class ChildRelationship(sort: SyntaxSort, min: Int, max: Int)
+  case class ChildRelationship(sort: SyntaxSort, min: Int, max: Int) {
+    assert(max > 0 && min >= 0)
+  }
+
+  val MAX_BRANCH = Integer.MAX_VALUE / 100
 
   case class SyntaxForm(command: Command,
     childs: Seq[ChildRelationship],
     toLayout: ToWidget,
     toAst: ToAst) {
+
+
     assert (childs.count(a => a.min != a.max) <= 1)
 
     val min = childs.map(_.min).sum
 
     val max = childs.map(_.max).sum
+
+    val varargsPosition = childs.indexOf((k: ChildRelationship) => k.min != k.max)
+
+    val isFixed = varargsPosition >= 0
+
+    val headerSize = if (isFixed) max else childs.take(varargsPosition).map(_.max).sum
+
+    val footerSize = if (isFixed) 0 else childs.drop(varargsPosition + 1).map(_.max).sum
+
+    def sort(index: Int, size: Int) = if (index < headerSize) {
+      var c = 0
+      var j = 0
+      while (index >= c) {
+        c += childs(j).max
+        j += 1
+      }
+      childs(j - 1).sort
+    } else if (index - headerSize < size - footerSize) {
+      childs(varargsPosition).sort
+    } else {
+      val findex = index - (size - footerSize)
+      var c = 0
+      var j = varargsPosition + 1
+      while (findex >= c) {
+        c += childs(j).max
+        j += 1
+      }
+      childs(j - 1).sort
+    }
   }
 
 
   def SyntaxFormConstant(name: String, t: T) =
-    SyntaxForm(ConstantCommand(name), Seq.empty, layouts.Inline1, (_, _) => t)
+    SyntaxForm(ConstantCommand(name), Seq.empty, layouts.Inline1, (_, _) => (t, Seq.empty))
 
   def SyntaxFormApplicative1(name: String, c: SyntaxSort, toAst: ToAst) =
     SyntaxForm(ConstantCommand(name), Seq(ChildRelationship(c, 1, 1)), layouts.Inline2, toAst)
@@ -198,7 +233,12 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
   }
 
 
-  class Tree(var form: Option[SyntaxForm]) {
+  def emptyError[T](t: T) = (t, Seq.empty[Error])
+
+  def mismatchError(t: AstBaseWithPositionData, s: SyntaxSort) = Seq(Error(t.data, "syntax sort mismatch, expecting " + s.name))
+
+
+  class Tree(var form: Option[SyntaxForm]) extends (Int => Tree) {
 
     var command: String = ""
     val childs: mutable.Buffer[Tree] = mutable.ArrayBuffer.empty
@@ -213,14 +253,22 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
     var commandLayout: WCommand = null
     var layout: Widget = null
 
+    override def toString: String = toString(0)
+
+    def toString(indent: Int): String = {
+      "                          ".take(indent) + command +
+        (if (size > 0) "\n" + childs.map(_.toString(indent + 2)).mkString("\n") else "")
+    }
+
     def measure(widthHint: Float): Unit = {
       // TODO not used now
       commandLayout = null
       val (min, max, transformer) = form.map(a => (a.min, a.max, a.toLayout)).getOrElse((0, 0, layouts.Inline1))
-      val cwidgets = childs.map(a => { a.measure(widthHint); a.layout })
-      layout = transformer(cwidgets)
-      if (max < childs.size) {
-        layout = layouts.Default(Seq(layout, WSequence(WIndent, WVertical(cwidgets.drop(max): _*))))
+      val wanted = childs.take(max)
+      val redandant = childs.drop(max)
+      layout = transformer(wanted.map(a => {a.measure(widthHint); a.layout}))
+      if (max < size) {
+        layout = layouts.Default(Seq(layout, WSequence(WIndent, WVertical(redandant.map(a => {a.measure(widthHint); a.layout}): _*))))
       }
       // this will measure the rest of the elements just created by the transformer
       // also one child might set the command layout property
@@ -234,8 +282,8 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
         val c = form.get
         val cast: Seq[(T, Seq[Error])] = childs.take(c.max).map(_.ast())
         val remain = childs.drop(c.max)
-        val ast = c.toAst.apply(command, cast.map(_._1))
-        val errors = cast.flatMap(_._2) ++ remain.map(a => Error(a, "redundant term"))
+        val (ast, nerrors) = c.toAst.apply(command, cast.map(_._1))
+        val errors = cast.flatMap(_._2) ++ remain.map(a => Error(a, "redundant term")) ++ nerrors
         (ast, errors)
       }
       ret._1.data = this
@@ -252,6 +300,8 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
       form = c.form
       command = c.command
     }
+
+    def apply(i: Int) = childs(i)
 
     def moveContentOut(): Tree = {
       val cc = new Tree(form)
@@ -283,12 +333,26 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
       }
     }
 
+    def clear() = childs.clear()
+
+    def head = childs.head
+
+    def headOption = childs.headOption
+
+    def nonEmpty = childs.nonEmpty
+
+    def isEmpty = childs.isEmpty
+
+    def indexOf(t: Tree) = childs.indexOf(t)
+
+    def size = childs.size
+
     def linearizedNextInSiblings(pred: Tree => Boolean): Option[Tree] = {
       parent match {
         case Some(p) =>
-          val i = p.childs.indexOf(this)
+          val i = p.indexOf(this)
           var k = i + 1
-          while (k < p.childs.size) {
+          while (k < p.size) {
             val res = p.childs(k).find(pred)
             if (res.nonEmpty) return res
             k += 1
@@ -309,11 +373,11 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
         None
       } else {
         val p = parent.get
-        val index = p.childs.indexOf(this)
+        val index = p.indexOf(this)
         if (index == 0) {
           Some(p)
         } else {
-          val s = p.childs(index - 1)
+          val s = p(index - 1)
           Some(s.last())
         }
       }
@@ -359,7 +423,7 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
     def remove(t: Tree): Unit = {
       assert(t.parent.get == this)
       t.parent = None
-      childs.remove(childs.indexOf(t))
+      childs.remove(indexOf(t))
     }
   }
 

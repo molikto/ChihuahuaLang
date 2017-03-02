@@ -68,6 +68,7 @@ object UntypedArithmetic {
       if (a._2.isEmpty) Left("no errors") else Right(a._2)
     }
 
+
     val Term = SyntaxSort("term", null)
     val True = SyntaxFormConstant("true", UAA.True)
     val False = SyntaxFormConstant("false", UAA.False)
@@ -80,11 +81,12 @@ object UntypedArithmetic {
           WSequence(WIndent, seq(2))
         )
       },
-      (name, childs) => UAA.If(childs(0), childs(1), childs(2))
+      (name, childs) => emptyError(UAA.If(childs(0), childs(1), childs(2)))
     )
-    val Succ = SyntaxFormApplicative1("succ", Term, (_, a) => UAA.Succ(a(0)))
-    val Pred = SyntaxFormApplicative1("pred", Term, (_, a) => UAA.Pred(a(0)))
-    val IsZero = SyntaxFormApplicative1("iszero", Term, (_, a) => UAA.IsZero(a(0)))
+
+    val Succ = SyntaxFormApplicative1("succ", Term, (_, a) => emptyError(UAA.Succ(a(0))))
+    val Pred = SyntaxFormApplicative1("pred", Term, (_, a) => emptyError(UAA.Pred(a(0))))
+    val IsZero = SyntaxFormApplicative1("iszero", Term, (_, a) => emptyError(UAA.IsZero(a(0))))
     def isPositiveNumber(s: String) = {
       s.length > 0 && s.forall(a => "0123456789".contains(a))
     }
@@ -92,7 +94,8 @@ object UntypedArithmetic {
       if (s.startsWith("-")) isPositiveNumber(s.substring(1))
       else isPositiveNumber(s)
     }
-    val Number = SyntaxForm(AcceptanceCommand(isNumber), Seq(), layouts.Inline1, (c, _) => UAA.Number(BigInt(c)))
+
+    val Number = SyntaxForm(AcceptanceCommand(isNumber), Seq(), layouts.Inline1, (c, _) => emptyError(UAA.Number(BigInt(c))))
     Term.forms = Seq(True, False, IfThenElse, Number, Succ, Pred, IsZero)
     override val Lang = Language(Seq(Term), Term.forms)
   }

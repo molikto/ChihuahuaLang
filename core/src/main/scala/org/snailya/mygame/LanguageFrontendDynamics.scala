@@ -50,13 +50,74 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
     if (command.isEmpty) {
       state.isInsert = false
     } else {
-      Lang.forms.find(_.command.accept(command)) match {
+      val (forms, sortSpcific) = selection.parent match {
+        case None => (Lang.forms, false)
+        case Some(p) =>
+          p.form match {
+            case None => (Lang.forms, false)
+            case Some(f) =>
+              val index = p.indexOf(selection)
+              val sort = f.sort(index, p.childs.size)
+              (sort.forms, true)
+          }
+      }
+      def commitGlobal() = {
+        Lang.forms.find(_.command.accept(command)) match {
+          case Some(f) =>
+            selection.form = Some(f)
+            selection.command = command
+            f.childs.foreach(c => {
+              for (i <- 0 until (c.min max 1)) {
+                val n = selection.appendNew()
+              }
+            })
+            if (jump) insertAtNextHoleOrExit()
+          case None =>
+        }
+      }
+      forms.find(_.command.accept(command)) match {
         case Some(f) =>
           selection.form = Some(f)
           selection.command = command
-          f.childs.foreach(_ => selection.appendNew())
+          f.childs.foreach(c => {
+            for (i <- 0 until (c.min max 1)) {
+              val n = selection.appendNew()
+            }
+          })
           if (jump) insertAtNextHoleOrExit()
         case None =>
+          if (sortSpcific && forms.size == 1) {
+            val only = forms.head
+            val auto = only.command match {
+              case ConstantCommand(c, a) if a => Some(c)
+              case _ => None
+            }
+            if (only.min == 1 && auto.isDefined) {
+              val sort = only.childs.find(_.min == 1).get.sort
+              sort.forms.find(_.command.accept(command)) match {
+                case Some(f) =>
+                  selection.form = Some(only)
+                  selection.command = auto.get
+                  only.childs.foreach(c => {
+                    for (i <- 0 until (c.min max 1)) {
+                      val n = selection.appendNew()
+                      if (c.min == 1) {
+                        n.form = Some(f)
+                        n.command = command
+                        state.selection = Some(n)
+                      }
+                    }
+                  })
+                  if (jump) insertAtNextHoleOrExit()
+                case None =>
+                  commitGlobal()
+              }
+            } else {
+              commitGlobal()
+            }
+          } else {
+            commitGlobal()
+          }
       }
     }
   }
@@ -103,6 +164,8 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
         true
       } else {
         character match {
+          case '~' =>
+            delog(state.root.toString)
           case 'i' => // enter insert mode
             if (state.selection.isDefined) state.isInsert = true
           case 'n' => // new empty sibling node next to this node
@@ -111,7 +174,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
                 state.selection = Some(t.appendNew())
               } else {
                 val p = t.parent.get
-                val i = p.childs.indexOf(t)
+                val i = p.indexOf(t)
                 val c = new Tree(None)
                 p.insert(i + 1, c)
                 state.selection = Some(c)
@@ -156,15 +219,15 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
           case 'J' => // go to first child
             state.selection match {
               case Some(t) =>
-                if (t.childs.nonEmpty) state.selection = Some(t.childs.head)
+                if (t.nonEmpty) state.selection = Some(t.head)
               case _ => state.selection = Some(state.root)
             }
           case 'L' => // go to next sibling
             state.selection.foreach(t => {
               t.parent match {
                 case Some(p) =>
-                  val selection = Math.min(p.childs.indexOf(t) + 1, p.childs.size - 1)
-                  state.selection = Some(p.childs(selection))
+                  val selection = Math.min(p.indexOf(t) + 1, p.size - 1)
+                  state.selection = Some(p(selection))
                 case None =>
               }
             })
@@ -172,34 +235,39 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
             state.selection.foreach(t => {
               t.parent match {
                 case Some(p) =>
-                  val selection = Math.max(p.childs.indexOf(t) - 1, 0)
-                  state.selection = Some(p.childs(selection))
+                  val selection = Math.max(p.indexOf(t) - 1, 0)
+                  state.selection = Some(p(selection))
                 case None =>
               }
             })
           case 'd' => // delete an item
             state.selection.foreach(t => {
-              if (t.childs.nonEmpty || t.form.nonEmpty) {
+              val isEmpty: Boolean = if (t.nonEmpty || t.form.nonEmpty) {
                 val tt = t.moveContentOut()
                 t.form = None
-                t.childs.clear()
+                t.clear()
                 state.clipboard = Some(tt)
+                false
+              } else {
+                true
               }
-              t.parent match {
-                case Some(p) =>
-                  val cap = p.form.map(_.min).getOrElse(0)
-                  if (p.childs.size > cap) {
-                    p.remove(t)
-                    state.selection = Some(p)
-                  }
-                case None =>
+              if (isEmpty) {
+                t.parent match {
+                  case Some(p) =>
+                    val cap = p.form.map(_.min).getOrElse(0)
+                    if (p.size > cap) {
+                      p.remove(t)
+                      state.selection = Some(p)
+                    }
+                  case None =>
+                }
               }
             })
           case 'p' => // paste an item
             state.selection.foreach(t => {
               state.clipboard match {
                 case Some(c) =>
-                  if (t.form.isEmpty && t.childs.isEmpty) {
+                  if (t.form.isEmpty && t.isEmpty) {
                     t.copyContent(c)
                   } else {
                     val cc = c.copy()
