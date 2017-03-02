@@ -100,7 +100,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
       seq =>
         WSequence(
           Seq(WCommand("λ"), WConstant("(")) ++
-            seq.dropRight(2).flatMap(v => Seq(v, WConstant(", "))) ++ seq.dropRight(1).takeRight(1) ++
+            sep(seq.dropRight(1), () => WConstant(", ")) ++
             Seq(WConstant(") ⇒ "), seq.last): _*),
       (_, seq) => {
         val bs = seq.dropRight(1).map(ensureBindingOptionalTypeSort)

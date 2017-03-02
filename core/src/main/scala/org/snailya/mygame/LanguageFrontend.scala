@@ -66,6 +66,8 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
 
   def ChildRelationshipFixed(sort: SyntaxSort, c: Int) = ChildRelationship(sort, c, c, c)
 
+  def sep[T](l: Seq[T], sep: () => T) : Seq[T] = l.dropRight(1).flatMap(a => Seq(a, sep())) ++ l.takeRight(1)
+
   val MAX_BRANCH = Integer.MAX_VALUE / 100
 
   case class SyntaxForm(command: Command,
