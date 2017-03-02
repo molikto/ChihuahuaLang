@@ -88,7 +88,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
     val Lambda = SyntaxForm(
       AcceptanceCommand(s => if (s == "\\") Some(Acceptance(true)) else if (s == "lam") Some(Acceptance(false)) else None),
       Seq(
-        ChildRelationship(BindingAndTypeSort, 0, MAX_BRANCH),
+        ChildRelationship(BindingAndTypeSort, 0, MAX_BRANCH, insertGrowPoint = true),
         ChildRelationship(TermSort, 1, 1)
       ),
       seq =>

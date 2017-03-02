@@ -100,7 +100,37 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
           }
       }
 
+
+      def appendNewHoleIfJustGoCrossGrowBoundary(selection: Tree): Unit = {
+        var c = selection
+        var p = selection.parent
+        var break = false
+        while (p.isDefined) {
+          val t = p.get
+          val of = t.form
+          if (of.isEmpty) break = true else {
+            val f = of.get
+            val index = t.indexOf(c)
+            val ocs = f.relation(index, t.size)
+            if (ocs.isEmpty) break = true else {
+              val cs = ocs.get
+              if (cs._1.fixed) {
+                p = t.parent
+                c = t
+              } else {
+                if (!cs._1.insertGrowPoint) break = true else {
+                  if (t.size < f.max) {
+                    if (f.relation(index + 1, t.size) !=
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
       def simpleFillCommand(selection: Tree, f: SyntaxForm): Unit = {
+
         selection.form = Some(f)
         selection.command = command
         if (!hasFormBefore) { // TODO deal with has form before
@@ -109,7 +139,12 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
               val n = selection.appendNew()
             }
           })
-          if (jump) insertAtNextHoleOrExit() else startInsert(None)
+          if (jump) {
+            appendNewHoleIfJustGoCrossGrowBoundary(selection)
+            insertAtNextHoleOrExit()
+          } else {
+            startInsert(None)
+          }
         } else {
           var hasNew = false
           while (selection.size < f.min) {

@@ -55,8 +55,10 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
 
   case class SyntaxSort(name: String, var forms: Seq[SyntaxForm] /* var only to construct cyclic reference */)
 
-  case class ChildRelationship(sort: SyntaxSort, min: Int, max: Int) {
+  case class ChildRelationship(sort: SyntaxSort, min: Int, max: Int, insertGrowPoint: Boolean = false) {
     assert(max > 0 && min >= 0)
+
+    val fixed = max == min
   }
 
   val MAX_BRANCH = Integer.MAX_VALUE / 100
@@ -81,7 +83,7 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
 
     val footerSize = if (isFixed) 0 else childs.drop(varargsPosition + 1).map(_.max).sum
 
-    def sort(index: Int, size: Int): Option[SyntaxSort] = if (index >= max) {
+    def relation(index: Int, size: Int): Option[(ChildRelationship, Int)] = if (index >= max) {
       None
     } else if (index < headerSize) {
       var c = 0
@@ -90,9 +92,9 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
         c += childs(j).max
         j += 1
       }
-      Some(childs(j - 1).sort)
+      Some((childs(j - 1), index))
     } else if (index - headerSize < size - footerSize) {
-      Some(childs(varargsPosition).sort)
+      Some((childs(varargsPosition), index - headerSize))
     } else {
       val findex = index - (size - footerSize)
       var c = 0
@@ -101,8 +103,10 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
         c += childs(j).max
         j += 1
       }
-      Some(childs(j - 1).sort)
+      Some((childs(j - 1), findex))
     }
+
+    def sort(index: Int, size: Int): Option[SyntaxSort] = relation(index, size).map(_._1.sort)
   }
 
 
