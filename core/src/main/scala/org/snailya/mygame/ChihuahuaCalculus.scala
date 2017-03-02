@@ -59,7 +59,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
     val BindingAndType = SyntaxForm(
       BindingCommand,
       Seq(
-        ChildRelationship(TypeSort, 1, 1)
+        ChildRelationship(TypeSort, 0, 1)
       ),
       seq => WSequence(Seq(WCommand(), WConstant(": ")) ++ seq: _*),
       (c, seq) =>
@@ -88,7 +88,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
     val Lambda = SyntaxForm(
       AcceptanceCommand(s => if (s == "\\") Some(Acceptance(true)) else if (s == "lam") Some(Acceptance(false)) else None),
       Seq(
-        ChildRelationship(BindingAndTypeSort, 0, MAX_BRANCH),
+        ChildRelationship(BindingAndTypeSort, 0, MAX_BRANCH, sepCommand = Some(',')),
         ChildRelationship(TermSort, 1, 1)
       ),
       seq =>

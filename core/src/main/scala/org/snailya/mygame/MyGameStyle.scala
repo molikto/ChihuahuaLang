@@ -58,7 +58,7 @@ trait MyGameStyle extends MyGameStyleBase {
          |line height: $lineHeight
          |cap height: ${internal.getCapHeight}
          |x height: ${internal.getXHeight}""".stripMargin)
-    def draw(x: Float, y: Float, str: String, c: Color = Color.WHITE) = {
+    def draw(x: Float, y: Float, str: String, c: Color = Color.WHITE): Float = {
       internal.setColor(c)
       val layout = internal.draw(batch, str, x, screenPixelHeight - y - heightOffset)
       internal.setColor(Color.WHITE)

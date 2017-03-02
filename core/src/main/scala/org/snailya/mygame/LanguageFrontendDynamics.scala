@@ -32,6 +32,9 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
     var errors: Seq[Error] = Seq.empty
   }
 
+
+  var debugPreviousCommand: Char = ' '
+
   def startInsert(b: Option[Int]) = {
     state.isInsert = b.isDefined
     state.cursorPosition = if (b.isEmpty) 0 else b.get
@@ -194,14 +197,37 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
       false
     }
 
-    override def keyTyped(character: Char) = {
+    override def keyTyped(character: Char): Boolean = {
       needsRemeasure = true
+      debugPreviousCommand = character
       if (state.isInsert) {
         delog("key typed: " + Integer.toHexString(character.toInt))
         assert(state.selection.isDefined)
         val selected = state.selection.get
         // TODO cursor movement
         // TODO support raw char input
+        if (commandDelimiterSeps.contains(character)) {
+          var c = selected
+          var p = selected.parent
+          while (p.isDefined) {
+            val pt = p.get
+            pt.form.foreach(f => {
+              if (pt.size < f.max) {
+                f.childs.find(_.sepCommand.contains(character)).foreach(rel => {
+                  val index = pt.indexOf(c)
+                  val sort = pt.form.get.relation(index, pt.size)
+                  if (sort.exists(_._1 == rel)) {
+                    pt.insert(index + 1, new Tree(None))
+                    commitCommand(true)
+                    return true // ATTENTION: early return!!
+                  }
+                })
+              }
+            })
+            c = pt
+            p = pt.parent
+          }
+        }
         if (character == ' ') {
           commitCommand(true)
         } else if (character == '\n') {
@@ -343,9 +369,15 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
     }
   })
 
+  var inited = false
   var needsRemeasure = true
 
+  var commandDelimiterSeps: Seq[Char] = Seq.empty
+
   def renderFrontend(delta: Float) = {
+    if (!inited) {
+      commandDelimiterSeps = Lang.forms.flatMap(_.childs.flatMap(a => a.sepCommand))
+    }
     val timeStart = System.nanoTime()
     var timeMeasureEnd = timeStart
     if (needsRemeasure) {
@@ -382,6 +414,8 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
     val t1 = (timeMeasureEnd - timeStart) / 1000000
     val t2 = (System.nanoTime() - timeMeasureEnd) / 1000000
     if (t1 != 0 || t2 != 0) delog("remeasure " + t1 + "ms; redrawn " + t2 + "ms")
+    val dpc = if (debugPreviousCommand == ' ') "SPACE" else if (debugPreviousCommand == '\n') "NEWLINE" else debugPreviousCommand.toString
+    Font.draw(Size8, screenPixelHeight - Size8 - Font.height, "command: " + dpc)
     end()
   }
 }
