@@ -56,17 +56,21 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
       case a: Ast => (CC.BindingOptionalType(BindingHole(), None), mismatchError(a, BindingAndTypeSort))
     }
 
+
+    val RecordItemSort = SyntaxSort("record item", null)
+
     val Sorts = Seq(
       TermSort,
       TermOrDefsSort,
       BindingSort,
       TypeSort,
       TypeBindingSort,
-      BindingAndTypeSort
+      BindingAndTypeSort,
+      RecordItemSort
     )
 
 
-    override val commandDelimiter = Seq(':', ',', '(', '@', '{')
+    override val commandDelimiter = Seq(':', ',', '(', '@', '{', '=', ';')
 
     val BindingCommand = AcceptanceCommand(s => {
       if (s.nonEmpty && !"0123456789".contains(s.head)) {
@@ -133,7 +137,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
         ChildRelationshipFixed(TermSort, 1, rotationCommand = Some('(')),
         ChildRelationship(TermSort, 0, MAX_BRANCH, 1, sepCommand = Some(','))
       ),
-      seq => WSequence(Seq(seq.head, WCommand("(")) ++ sep(seq.tail, () => WConstant(", ")) ++ Seq(WConstant(")")): _*),
+      seq => WSequence(Seq(seq.head, WCommand()) ++ sep(seq.tail, () => WConstant(", ")) ++ Seq(WConstant(")")): _*),
       (_, seq) => {
         val ps = seq.map(ensureTermSort)
         val ts = ps.map(_._1)
@@ -148,7 +152,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
         ChildRelationshipFixed(TermSort, 1, rotationCommand = Some('@')),
         ChildRelationshipFixed(TypeSort, 1)
       ),
-      seq => WSequence(Seq(seq.head, WConstant(" "), WCommand("@"), WConstant(" "), seq(1)): _*),
+      seq => WSequence(Seq(seq.head, WConstant(" "), WCommand(), WConstant(" "), seq(1)): _*),
       (_, seq) => {
         val t1 = ensureTermSort(seq.head)
         val t2 = ensureTypeSort(seq(1))
@@ -208,18 +212,17 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
       case b: Term => (Left(CC.TermDef(CC.BindingIgnore(), b)), Seq.empty)
       case a: TermDef => (Left(a), Seq.empty)
       case a: TypeDef => (Right(a), Seq.empty)
-      case h: AstHole => (Left(CC.TermDef(CC.BindingIgnore(), CC.Hole())), Seq.empty)
       case a: Ast => (Left(CC.TermDef(CC.BindingIgnore(), CC.Hole())), mismatchError(a, TermOrDefsSort))
     }
 
     val Block = SyntaxForm(
       ConstantCommand("{", acc = Acceptance(true)),
       Seq(
-        ChildRelationship(TermOrDefsSort, 0, MAX_BRANCH, 1)
+        ChildRelationship(TermOrDefsSort, 0, MAX_BRANCH, 1, sepCommand = Some(';'))
       ),
       seq => WVertical(WCommand(), WSequence(WIndent(), WVertical(seq: _*)), WConstant("}")),
       (c, seqp) => {
-        val seq = seqp.filter(!_.isInstanceOf[Hole])
+        val seq = seqp.filter(!_.isInstanceOf[AstHole])
         if (seq.isEmpty) {
           (CC.Let(Seq.empty, Prelude.TermUnit), Seq.empty)
         } else {
@@ -234,6 +237,29 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
         }
       },
       isBlock = true
+    )
+
+
+    val RecordItem = SyntaxForm(
+      BindingCommand,
+      Seq(ChildRelationshipFixed(TermSort, 1, createCommand = Some('='))),
+      seq => WSequence(WCommand(), WConstant(" = "), seq.head),
+      (c, seqp) => {
+        val ps = ensureTermSort(seqp.head)
+        (CC.RecordItem(c, ps._1), ps._2)
+      }
+    )
+
+    val Record = SyntaxForm(
+      ConstantCommand("[", acc = Acceptance(true)),
+      Seq(ChildRelationship(RecordItemSort, 0, MAX_BRANCH, 1, sepCommand = Some(','))),
+      seq => WSequence(WCommand() +: sep(seq, () => WConstant(", ")) :+ WConstant("]"): _*),
+      (c, seq) => {
+        val nHole = seq.filter(!_.isInstanceOf[AstHole])
+        val rs = nHole.filter(_.isInstanceOf[CC.RecordItem]).map(_.asInstanceOf[CC.RecordItem])
+        val es = nHole.filter(!_.isInstanceOf[CC.RecordItem]).flatMap(a => mismatchError(a, RecordItemSort))
+        (CC.Record(rs), es)
+      }
     )
 
     val PrimIntConstant = SyntaxForm(
@@ -257,6 +283,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
     //    )
 
     TermSort.forms = Seq(
+      Record,
       Block,
       Application,
       Ascription,
@@ -279,7 +306,10 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
 
     TypeBindingSort.forms = Seq(TypeBinding)
 
+    RecordItemSort.forms = Seq(RecordItem)
+
     val Forms = Seq(
+      Record,
       Block,
       TermDef,
       TypeDef,
@@ -290,10 +320,11 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
       // dynamic
       PrimIntConstant,
       // bottom
+      RecordItem,
       Binding,
       BindingAndType)
 
-    override val Lang = Language(Sorts, Forms)
+    override val Lang = Language(Sorts, Forms, Some(TermSort))
 
     override def compile(l: Ast) = Left("")
 

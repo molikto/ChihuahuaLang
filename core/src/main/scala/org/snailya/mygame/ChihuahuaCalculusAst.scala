@@ -44,7 +44,8 @@ trait ChihuahuaCalculusAst {
   /**
     * record
     */
-  case class Record(ts: Seq[(String, Term)]) extends Term
+  case class RecordItem(b: String, t: Term) extends Ast
+  case class Record(ts: Seq[RecordItem]) extends Term
   case class Projection(l: Term, r: String) extends Term
 
   case class TypeRecord(ts: Seq[(String, Type)]) extends Type

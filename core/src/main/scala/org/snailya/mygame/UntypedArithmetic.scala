@@ -97,7 +97,7 @@ object UntypedArithmetic {
 
     val Number = SyntaxForm(AcceptanceCommand(s => if (isNumber(s)) Some(Acceptance(false)) else None), Seq(), layouts.Inline1, (c, _) => emptyError(UAA.Number(BigInt(c))))
     Term.forms = Seq(True, False, IfThenElse, Number, Succ, Pred, IsZero)
-    override val Lang = Language(Seq(Term), Term.forms)
+    override val Lang = Language(Seq(Term), Term.forms, Some(Term))
   }
 }
 

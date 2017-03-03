@@ -40,10 +40,10 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
     state.cursorPosition = if (b.isEmpty) 0 else b.get
   }
 
-  def insertAtNextHoleOrExit() = {
+  def insertAtNextHoleOrExit(commandEmptyBefore: Boolean) = {
     // TODO make it better
     state.selection.get.commandBuffer = ""
-    val res = state.selection.get.linearizedNext(_.form.isEmpty)
+    val res = state.selection.get.linearizedNext(a => a.form.isEmpty || commandEmptyBefore)
     if (res.nonEmpty) {
       startInsert(Some(0))
       state.selection = res
@@ -52,13 +52,26 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
     }
   }
 
+  def createChildsForNewCommand(selection: Tree, i: Int = 0): Unit = {
+    val f = selection.form.get
+    f.childs.drop(i).foreach(c => {
+      for (i <- 0 until c.init) {
+        val n = selection.appendNew()
+        if (c.sort.forms.size == 1) {
+          n.form = Some(c.sort.forms.head)
+          createChildsForNewCommand(n)
+        }
+      }
+    })
+  }
+
   def tryCommitCommandEager(jump: Boolean): Unit = {
     assert(state.selection.nonEmpty)
     val selection = state.selection.get
     val command = selection.commandBuffer
     if (selection.form.isEmpty) { // TODO eager commit with non-empty form
       val (forms, sortSpcific) = selection.parent match {
-        case None => (Lang.forms, false)
+        case None => (Lang.rootForm, false)
         case Some(p) =>
           p.form match {
             case None => (Lang.forms, false)
@@ -71,13 +84,10 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
       forms.find(_.command.accept(command).exists(_.eager)) match {
         case Some(f) =>
           selection.form = Some(f)
+          val emptyBefore = selection.command.isEmpty
           selection.command = command
-          f.childs.foreach(c => {
-            for (i <- 0 until c.init) {
-              val n = selection.appendNew()
-            }
-          })
-          if (jump) insertAtNextHoleOrExit()
+          createChildsForNewCommand(selection)
+          if (jump) insertAtNextHoleOrExit(emptyBefore)
         case None =>
       }
     }
@@ -88,12 +98,13 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
     val selection = state.selection.get
     val command = selection.commandBuffer
     selection.commandBuffer = ""
-    val hasFormBefore = selection.form.nonEmpty
+    val formEmpty = selection.form.isEmpty
+    val contentEmpty = formEmpty || selection.command.isEmpty
     if (command.isEmpty) {
       startInsert(None)
     } else {
       val (forms, sortSpcific) = selection.parent match {
-        case None => (Lang.forms, false)
+        case None => (Lang.rootForm, false)
         case Some(p) =>
           p.form match {
             case None => (Lang.forms, false)
@@ -107,21 +118,18 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
 
       def simpleFillCommand(selection: Tree, f: SyntaxForm): Unit = {
         selection.form = Some(f)
+        val emptyBefore = selection.command.isEmpty
         selection.command = command
-        if (!hasFormBefore) { // TODO deal with has form before
-          f.childs.foreach(c => {
-            for (i <- 0 until c.init) {
-              val n = selection.appendNew()
-            }
-          })
-          if (jump) insertAtNextHoleOrExit() else startInsert(None)
+        if (formEmpty) { // TODO deal with has form before
+          createChildsForNewCommand(selection)
+          if (jump) insertAtNextHoleOrExit(emptyBefore) else startInsert(None)
         } else {
           var hasNew = false
           while (selection.size < f.min) {
             hasNew = true
             selection.appendNew()
           }
-          if (hasNew && jump) insertAtNextHoleOrExit()
+          if ((hasNew || contentEmpty) && jump) insertAtNextHoleOrExit(emptyBefore)
           else startInsert(None)
         }
       }
@@ -137,7 +145,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
         case Some(f) =>
           simpleFillCommand(selection, f)
         case None =>
-          if (!hasFormBefore && sortSpcific && forms.size == 1) { // TODO also here, deal with has form before
+          if (formEmpty && sortSpcific && forms.size == 1) { // TODO also here, deal with has form before
             val only = forms.head
             val auto = only.command match {
               case ConstantCommand(c, a, _) if a => Some(c)
@@ -148,6 +156,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
               sort.forms.find(_.command.accept(command).nonEmpty) match {
                 case Some(f) =>
                   selection.form = Some(only)
+                  val emptyBefore = selection.command.isEmpty
                   selection.command = auto.get
                   only.childs.foreach(c => {
                     for (i <- 0 until c.init) {
@@ -159,7 +168,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
                       }
                     }
                   })
-                  if (jump) insertAtNextHoleOrExit()
+                  if (jump) insertAtNextHoleOrExit(emptyBefore)
                   else startInsert(None)
                 case None =>
                   commitGlobal()
@@ -270,18 +279,15 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
                     index
                   })
                   val nc = new Tree(Some(f))
+                  nc.command = character.toString
                   nc.append(s)
-                  f.childs.drop(1).foreach(c => {
-                    for (i <- 0 until c.init) {
-                      val n = nc.appendNew()
-                    }
-                  })
+                  createChildsForNewCommand(nc, 1)
                   parent match {
                     case Some(p) => p.insert(index.get, nc)
                     case None => state.root = nc
                   }
                   state.selection = Some(nc)
-                  insertAtNextHoleOrExit()
+                  insertAtNextHoleOrExit(false)
                   return true
                 }
               }
@@ -314,7 +320,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
         character match {
           case '~' =>
             delog(state.root.toString)
-          case 'i' => // enter insert mode
+          case 'i' | '\n' => // enter insert mode
             if (state.selection.isDefined) startInsert(Some(0))
           case 'b' =>
             var tt = state.selection

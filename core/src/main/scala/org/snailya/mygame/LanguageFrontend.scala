@@ -66,11 +66,11 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
   ) {
     assert(max > 0 && min >= 0)
 
-    assert(max != min || (sepCommand.isEmpty && createCommand.isEmpty))
+    assert(max != min || sepCommand.isEmpty)
   }
 
 
-  def ChildRelationshipFixed(sort: SyntaxSort, c: Int, rotationCommand: Option[Char] = None) = ChildRelationship(sort, c, c, c, rotationCommand = rotationCommand)
+  def ChildRelationshipFixed(sort: SyntaxSort, c: Int, rotationCommand: Option[Char] = None, createCommand: Option[Char] = None) = ChildRelationship(sort, c, c, c, rotationCommand = rotationCommand, createCommand = createCommand)
 
   def sep[T](l: Seq[T], sep: () => T) : Seq[T] = l.dropRight(1).flatMap(a => Seq(a, sep())) ++ l.takeRight(1)
 
@@ -133,7 +133,8 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
   def SyntaxFormApplicative1(name: String, c: SyntaxSort, toAst: ToAst) =
     SyntaxForm(ConstantCommand(name), Seq(ChildRelationshipFixed(c, 1)), layouts.Inline2, toAst)
 
-  case class Language(sorts: Seq[SyntaxSort], forms: Seq[SyntaxForm]) {
+  case class Language(sorts: Seq[SyntaxSort], forms: Seq[SyntaxForm], rootFormOpt: Option[SyntaxSort]) {
+    val rootForm:Seq[SyntaxForm] = rootFormOpt.map(_.forms).getOrElse(forms)
   }
 
   abstract class Widget() {
@@ -242,7 +243,7 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
 
     override def measure0(tree: Tree) = {
       tree.commandLayout = this
-      val placeholderText = if (tree.commandBuffer.nonEmpty) tree.commandBuffer else if (tree.form.isEmpty) "?" else ""
+      val placeholderText = if (tree.commandBuffer.nonEmpty) tree.commandBuffer else if (tree.form.isEmpty || tree.command.isEmpty) "?" else ""
       val text = if (placeholderText.nonEmpty) {
         color = PlaceholderColor
         placeholderText
