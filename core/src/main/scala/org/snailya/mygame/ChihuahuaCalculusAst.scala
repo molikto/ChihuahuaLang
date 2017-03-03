@@ -48,7 +48,8 @@ trait ChihuahuaCalculusAst {
   case class Record(ts: Seq[RecordItem]) extends Term
   case class Projection(l: Term, r: String) extends Term
 
-  case class TypeRecord(ts: Seq[(String, Type)]) extends Type
+  case class TypeRecordItem(b: String, t: Type) extends Ast
+  case class TypeRecord(ts: Seq[TypeRecordItem]) extends Type
 
   /**
     * variant

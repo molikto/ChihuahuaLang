@@ -59,6 +59,8 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
 
     val RecordItemSort = SyntaxSort("record item", null)
 
+    val TypeRecordItemSort = SyntaxSort("record type item", null)
+
     val Sorts = Seq(
       TermSort,
       TermOrDefsSort,
@@ -66,7 +68,8 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
       TypeSort,
       TypeBindingSort,
       BindingAndTypeSort,
-      RecordItemSort
+      RecordItemSort,
+      TypeRecordItemSort
     )
 
 
@@ -262,6 +265,28 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
       }
     )
 
+    val TypeRecordItem = SyntaxForm(
+      BindingCommand,
+      Seq(ChildRelationshipFixed(TypeSort, 1, createCommand = Some(':'))),
+      seq => WSequence(WCommand(), WConstant(" : "), seq.head),
+      (c, seqp) => {
+        val ps = ensureTypeSort(seqp.head)
+        (CC.TypeRecordItem(c, ps._1), ps._2)
+      }
+    )
+
+    val TypeRecord = SyntaxForm(
+      ConstantCommand("[", acc = Acceptance(true)),
+      Seq(ChildRelationship(TypeRecordItemSort, 0, MAX_BRANCH, 1, sepCommand = Some(','))),
+      seq => WSequence(WCommand() +: sep(seq, () => WConstant(", ")) :+ WConstant("]"): _*),
+      (c, seq) => {
+        val nHole = seq.filter(!_.isInstanceOf[AstHole])
+        val rs = nHole.filter(_.isInstanceOf[CC.TypeRecordItem]).map(_.asInstanceOf[CC.TypeRecordItem])
+        val es = nHole.filter(!_.isInstanceOf[CC.TypeRecordItem]).flatMap(a => mismatchError(a, TypeRecordItemSort))
+        (CC.TypeRecord(rs), es)
+      }
+    )
+
     val PrimIntConstant = SyntaxForm(
       AcceptanceCommand(s => if (Try {
         Integer.parseInt(s)
@@ -302,14 +327,17 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
       Binding
     )
 
-    TypeSort.forms = Seq(TypeFunction, TypeBinding)
+    TypeSort.forms = Seq(TypeFunction, TypeBinding, TypeRecord)
 
     TypeBindingSort.forms = Seq(TypeBinding)
 
     RecordItemSort.forms = Seq(RecordItem)
 
+    TypeRecordItemSort.forms = Seq(TypeRecordItem)
+
     val Forms = Seq(
       Record,
+      TypeRecord,
       Block,
       TermDef,
       TypeDef,
@@ -321,6 +349,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
       PrimIntConstant,
       // bottom
       RecordItem,
+      TypeRecordItem,
       Binding,
       BindingAndType)
 
