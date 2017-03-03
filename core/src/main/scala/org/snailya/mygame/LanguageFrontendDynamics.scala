@@ -22,7 +22,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
 
 
   object state {
-    val root = new Tree(None)
+    var root = new Tree(None)
     var selection: Option[Tree] = Some(root)
     var isInsert = false
     var clipboard: Option[Tree] = None
@@ -44,8 +44,10 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
     // TODO make it better
     state.selection.get.commandBuffer = ""
     val res = state.selection.get.linearizedNext(_.form.isEmpty)
-    if (res.nonEmpty) state.selection = res
-    else {
+    if (res.nonEmpty) {
+      startInsert(Some(0))
+      state.selection = res
+    } else {
       startInsert(None)
     }
   }
@@ -254,10 +256,47 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
           false
         }
 
-        if (commandDelimiter.contains(character)) { // current char is NOT part of the command buffer, it will end the command first and try to run the command
+
+        def tryCommandRotation(s: Tree): Boolean = {
+          s.form.foreach(sform => {
+            Lang.forms.foreach(f => {
+              if (f.childs.nonEmpty) {
+                val cf = f.childs.head
+                if (cf.rotationCommand.contains(character) && cf.sort.forms.contains(sform)) {
+                  val parent = s.parent
+                  val index = parent.map(p => {
+                    val index = p.indexOf(s)
+                    p.remove(s)
+                    index
+                  })
+                  val nc = new Tree(Some(f))
+                  nc.append(s)
+                  f.childs.drop(1).foreach(c => {
+                    for (i <- 0 until c.init) {
+                      val n = nc.appendNew()
+                    }
+                  })
+                  parent match {
+                    case Some(p) => p.insert(index.get, nc)
+                    case None => state.root = nc
+                  }
+                  state.selection = Some(nc)
+                  insertAtNextHoleOrExit()
+                  return true
+                }
+              }
+            })
+          })
+
+          false
+        }
+
+        // current char is NOT part of the command buffer, it will end the command first and try to run the command
+        if (commandDelimiter.contains(character)) {
           commitCommand(false)
           if (tryCommandSep(selected)) return true
           else if (tryCommandChild(selected)) return true
+          else if (tryCommandRotation(selected)) return true
         }
         if (character == ' ') {
           commitCommand(true)
@@ -277,21 +316,21 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
             delog(state.root.toString)
           case 'i' => // enter insert mode
             if (state.selection.isDefined) startInsert(Some(0))
-          case 'n' => // new empty sibling node next to this node
+          case 'o' => // new empty sibling node next to this node
             state.selection.foreach(t => {
-//              if (t.parent.isEmpty) {
-//                state.selection = Some(t.appendNew())
-//              } else {
-//              }
-              val p = t.parent.get
-              val i = p.indexOf(t)
-              val c = new Tree(None)
-              p.insert(i + 1, c)
-              state.selection = Some(c)
+              if (t.parent.isEmpty) {
+                state.selection = Some(t.appendNew())
+              } else {
+                val p = t.parent.get
+                val i = p.indexOf(t)
+                val c = new Tree(None)
+                p.insert(i + 1, c)
+                state.selection = Some(c)
+              }
 
               startInsert(Some(0))
             })
-          case 'N' => // new empty child node
+          case 'n' => // new empty child node
             state.selection.foreach(t => {
               if (t.form.nonEmpty) {
                 val n = new Tree(None)
@@ -368,7 +407,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
               } else {
                 true
               }
-              if (true && isEmpty) {
+              if (isEmpty) {
                 t.parent match {
                   case Some(p) =>
                     val index = p.indexOf(t)

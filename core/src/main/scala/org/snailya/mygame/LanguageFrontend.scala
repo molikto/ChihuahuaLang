@@ -42,6 +42,7 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
     def accept(s: String): Option[Acceptance]
   }
 
+  // TODO the logic for auto create is lost... I don't know why we don't just have one case class command and a lot of helpers
   case class ConstantCommand(s: String, autoCreate: Boolean = false, acc: Acceptance = Acceptance(false)) extends Command {
     def accept(a: String) = if (a == s) Some(acc) else None
   }
@@ -49,6 +50,8 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
   case class AcceptanceCommand(s: String => Option[Acceptance]) extends Command {
     def accept(a: String) = s(a)
   }
+
+  val RefuseAllCommand = AcceptanceCommand(s => None)
 
   type ToWidget = Seq[Widget] => Widget
 

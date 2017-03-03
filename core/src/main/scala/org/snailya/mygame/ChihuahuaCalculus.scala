@@ -113,9 +113,9 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
 
 
     val Application = SyntaxForm(
-      ConstantCommand("("),
+      RefuseAllCommand, // we don't have a command for application, instead, we always use the rotation command bellow
       Seq(
-        ChildRelationshipFixed(TermSort, 1),
+        ChildRelationshipFixed(TermSort, 1, rotationCommand = Some('(')),
         ChildRelationship(TermSort, 0, MAX_BRANCH, 1, sepCommand = Some(','))
       ),
       seq => WSequence(Seq(seq.head, WCommand("(")) ++ sep(seq.tail, () => WConstant(", ")) ++ Seq(WConstant(")")) : _*),
