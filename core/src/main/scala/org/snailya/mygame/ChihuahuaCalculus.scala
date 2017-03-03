@@ -334,6 +334,35 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
       }
     )
 
+    val CaseItem = SyntaxForm(
+      BindingCommand,
+      Seq(
+        ChildRelationshipFixed(BindingSort, 1),
+        ChildRelationshipFixed(TermSort, 1)
+      ),
+      seq => WSequence(WCommand(), WConstant("#"), seq.head, WConstant(" ⇒ "), seq(1)),
+      (c, seq) => {
+        val t1 = ensureBindingSort(seq.head)
+        val t2 = ensureTermSort(seq(1))
+        (CC.CaseItem(c, t1._1, t2._1), t1._2 ++ t2._2)
+      }
+    )
+
+    val Case = SyntaxForm(
+      ConstantCommand("case"),
+      Seq(
+        ChildRelationshipFixed(TermSort, 1),
+        ChildRelationship(CaseItemSort, 0, MAX_BRANCH, 1)),
+      seq => WVertical(WSequence(WCommand(), WConstant(" "), seq.head) +: seq.tail :_*),
+      (c, seq) => {
+        val t1 = ensureTermSort(seq.head)
+        val t2 = seq.tail.filter(a => !a.isInstanceOf[Hole])
+        val t3 = t2.filter(_.isInstanceOf[CaseItem]).map(_.asInstanceOf[CaseItem])
+        val t4 = t2.filter(!_.isInstanceOf[CaseItem]).flatMap(a => mismatchError(a, CaseItemSort))
+        (CC.Case(t1._1, t3), t1._2 ++ t4)
+      }
+    )
+
     val PrimIntConstant = SyntaxForm(
       AcceptanceCommand(s => if (Try {
         Integer.parseInt(s)
@@ -355,6 +384,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
     //    )
 
     TermSort.forms = Seq(
+      Case,
       Tagging,
       Record,
       Block,
@@ -385,7 +415,10 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
 
     TypeVariantItemSort.forms = Seq(TypeVariantItem)
 
+    CaseItemSort.forms = Seq(CaseItem)
+
     val Forms = Seq(
+      Case,
       TypeVariant,
       Tagging,
       Record,

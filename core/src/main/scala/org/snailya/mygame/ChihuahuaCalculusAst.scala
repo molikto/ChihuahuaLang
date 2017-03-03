@@ -56,7 +56,7 @@ trait ChihuahuaCalculusAst {
     */
   case class Tagging(name: String, term: Term) extends Term
 
-  case class CaseItem(nam: String, bind: Binding, term: Term) extends Ast
+  case class CaseItem(name: String, bind: Binding, term: Term) extends Ast
   case class Case(t: Term, cs: Seq[CaseItem]) extends Term
 
   case class TypeVariant(vs: Seq[NameAndType]) extends Type
