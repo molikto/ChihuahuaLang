@@ -421,6 +421,20 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
                 }
               }
             })
+          case 'q' =>
+            state.selection.foreach(t => {
+              t.parent.foreach(p => {
+                p.remove(t)
+                p.parent match {
+                  case Some(pp) =>
+                    val index = pp.indexOf(p)
+                    pp.remove(p)
+                    pp.insert(index, t)
+                  case None =>
+                    state.root = t
+                }
+              })
+            })
           case 'p' => // paste an item
             state.selection.foreach(t => {
               state.clipboard match {

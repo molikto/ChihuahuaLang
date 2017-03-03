@@ -39,7 +39,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
 
     val TypeBindingSort = SyntaxSort("type binding", null)
 
-    val BindingAndTypeSort = SyntaxSort("binding optional type", null)
+    val BindingAndTypeSort = SyntaxSort("binding with type", null)
 
     def ensureBindingOptionalTypeSort(t: Ast): (BindingOptionalType, Seq[Error]) = t match {
       case b: BindingOptionalType => (b, Seq.empty)
@@ -58,7 +58,13 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
 
     override val commandDelimiter = Seq(':', ',', '(', '@')
 
-    val BindingCommand = AcceptanceCommand(s => Some(Acceptance(false)))
+    val BindingCommand = AcceptanceCommand(s => {
+      if (s.nonEmpty && !"0123456789".contains(s.head)) {
+        Some(Acceptance(false))
+      } else {
+        None
+      }
+    })
 
     val BindingAndType = SyntaxForm(
       BindingCommand,
@@ -111,7 +117,6 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
       }
     )
 
-
     val Application = SyntaxForm(
       RefuseAllCommand, // we don't have a command for application, instead, we always use the rotation command bellow
       Seq(
@@ -160,6 +165,8 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
         (CC.TypeFunction(bst.dropRight(1), bst.last), bse)
       }
     )
+
+
 
 
     //    val Application = SyntaxForm(
