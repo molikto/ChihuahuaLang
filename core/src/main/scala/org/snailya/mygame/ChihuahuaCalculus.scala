@@ -56,7 +56,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
     )
 
 
-    override val commandDelimiter = Seq(':', ',', '(')
+    override val commandDelimiter = Seq(':', ',', '(', '@')
 
     val BindingCommand = AcceptanceCommand(s => Some(Acceptance(false)))
 
@@ -90,7 +90,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
       seq => WCommand(),
       (c, seq) => emptyError(CC.TypeBindingName(c))
     )
-    
+
     val Lambda = SyntaxForm(
       AcceptanceCommand(s => if (s == "\\") Some(Acceptance(true)) else if (s == "lam") Some(Acceptance(false)) else None),
       Seq(
@@ -127,6 +127,20 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
       }
     )
 
+    val Ascription = SyntaxForm(
+      RefuseAllCommand, // we don't have a command for application, instead, we always use the rotation command bellow
+      Seq(
+        ChildRelationshipFixed(TermSort, 1, rotationCommand = Some('@')),
+        ChildRelationshipFixed(TypeSort, 1)
+      ),
+      seq => WSequence(Seq(seq.head, WConstant(" "), WCommand("@"), WConstant(" "), seq(1)): _*),
+      (_, seq) => {
+        val t1 = ensureTermSort(seq.head)
+        val t2 = ensureTypeSort(seq(1))
+        (CC.Ascription(t1._1, t2._1), t1._2 ++ t2._2)
+      }
+    )
+
     val TypeFunction = SyntaxForm(
       ConstantCommand("pi"),
       Seq(
@@ -146,6 +160,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
         (CC.TypeFunction(bst.dropRight(1), bst.last), bse)
       }
     )
+
 
     //    val Application = SyntaxForm(
     //      ConstantCommand("("),
@@ -200,6 +215,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
 
     TermSort.forms = Seq(
       Application,
+      Ascription,
       Lambda,
       PrimIntConstant,
       Binding
@@ -219,6 +235,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
 
     val Forms = Seq(
       Application,
+      Ascription,
       Lambda,
       TypeFunction,
       // dynamic
