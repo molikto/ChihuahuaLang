@@ -15,9 +15,14 @@ trait ChihuahuaCalculusAst {
   case class TypeHole() extends Type
 
 
+  object Prelude {
+    val TermUnit = BindingName("unit")
+  }
+
   abstract class Binding() extends Term
   case class BindingName(name: String) extends Binding
   case class BindingHole() extends Binding
+  case class BindingIgnore() extends Binding
 
   abstract class TypeBinding() extends Type
   case class TypeBindingName(name: String) extends TypeBinding
@@ -66,8 +71,8 @@ trait ChihuahuaCalculusAst {
   /**
     * let
     */
-  case class TermDef(name: BindingName, Term: Term)
-  case class TypeDef(name: TypeBinding, t: Type)
+  case class TermDef(name: Binding, Term: Term) extends Ast
+  case class TypeDef(name: TypeBinding, t: Type) extends Ast
   case class Let(bindings: Seq[Either[TermDef, TypeDef]], body: Term) extends Term
 
 

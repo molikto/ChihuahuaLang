@@ -81,7 +81,8 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
   case class SyntaxForm(command: Command,
     childs: Seq[ChildRelationship],
     toLayout: ToWidget,
-    toAst: ToAst) {
+    toAst: ToAst,
+    isBlock: Boolean = false) {
 
     assert (childs.count(a => a.min != a.max) <= 1)
 

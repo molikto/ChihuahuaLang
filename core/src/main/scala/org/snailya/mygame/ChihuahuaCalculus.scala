@@ -6,9 +6,10 @@ import scala.util.Try
 /**
   * Created by molikto on 01/03/2017.
   */
-object ChihuahuaCalculus extends ChihuahuaCalculusAst {
+object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
 
   trait Frontend extends LanguageFrontendDynamics[Ast, AstHole] {
+
 
     val CC = ChihuahuaCalculus
 
@@ -19,6 +20,9 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
       case h: AstHole => (Hole(), Seq.empty)
       case a: Ast => (Hole(), mismatchError(a, TermSort))
     }
+
+    val TermOrDefsSort = SyntaxSort("terms or defs", null)
+
 
     val BindingSort = SyntaxSort("binding", null)
 
@@ -34,10 +38,15 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
       case b: Type => (b, Seq.empty)
       case h: AstHole => (TypeHole(), Seq.empty)
       case a: Ast => (TypeHole(), mismatchError(a, TypeSort))
-
     }
 
     val TypeBindingSort = SyntaxSort("type binding", null)
+
+    def ensureTypeBindingSort(t: Ast): (TypeBinding, Seq[Error]) = t match {
+      case b: TypeBindingName => (b, Seq.empty)
+      case h: AstHole => (TypeBindingHole(), Seq.empty)
+      case a: Ast => (TypeBindingHole(), mismatchError(a, BindingSort))
+    }
 
     val BindingAndTypeSort = SyntaxSort("binding with type", null)
 
@@ -49,6 +58,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
 
     val Sorts = Seq(
       TermSort,
+      TermOrDefsSort,
       BindingSort,
       TypeSort,
       TypeBindingSort,
@@ -56,7 +66,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
     )
 
 
-    override val commandDelimiter = Seq(':', ',', '(', '@')
+    override val commandDelimiter = Seq(':', ',', '(', '@', '{')
 
     val BindingCommand = AcceptanceCommand(s => {
       if (s.nonEmpty && !"0123456789".contains(s.head)) {
@@ -166,39 +176,65 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
       }
     )
 
-
-
-
-    //    val Application = SyntaxForm(
-    //      ConstantCommand("("),
-    //      Seq(Term, Term),
-    //      ToLayout(
-    //        2,
-    //        seq => WSequence(WCommand(), seq(0), WConstant(" "), seq(1), WConstant(")"))
-    //      ),
-    //      (c, seq) => CC.Application(seq(0), seq(1))
-    //    )
-    //
-
-
-    /* val Definition = SyntaxForm(
+    val TermDef = SyntaxForm(
       ConstantCommand("def"),
-      Seq(Binding, Term),
-      ToLayout(2, seq => WSequence(WCommand(), WConstant(" "), seq(0), WConstant(" = "), seq(1))),
-      (c, seq) => CC.Definition(seq(0).asInstanceOf[ReferenceOrHole], seq(1))
+      Seq(
+        ChildRelationshipFixed(BindingSort, 1),
+        ChildRelationshipFixed(TermSort, 1)
+      ),
+      seq => WSequence(WCommand(), WConstant(" "), seq(0), WConstant(" = "), seq(1)),
+      (_, seq) => {
+        val bs = ensureBindingSort(seq(0))
+        val ts = ensureTermSort(seq(1))
+        (CC.TermDef(bs._1, ts._1), bs._2 ++ ts._2)
+      }
     )
 
-    val Begin = SyntaxForm(
-      ConstantCommand("{"),
-      Seq(Term),
-      ToLayout(-1, seq => WVertical(
-        WCommand(),
-        WSequence(WIndent, WVertical(seq: _*)),
-        WConstant("}")
-      )),
-      (c, seq) => CC.Begin(seq: _*)
+    val TypeDef = SyntaxForm(
+      ConstantCommand("typedef"),
+      Seq(
+        ChildRelationshipFixed(TypeBindingSort, 1),
+        ChildRelationshipFixed(TypeSort, 1)
+      ),
+      seq => WSequence(WCommand(), WConstant(" "), seq(0), WConstant(" = "), seq(1)),
+      (_, seq) => {
+        val bs = ensureTypeBindingSort(seq(0))
+        val ts = ensureTypeSort(seq(1))
+        (CC.TypeDef(bs._1, ts._1), bs._2 ++ ts._2)
+      }
     )
-    */
+
+    def ensureDefSort(t: Ast): (Either[TermDef, TypeDef], Seq[Error]) = t match {
+      case b: Term => (Left(CC.TermDef(CC.BindingIgnore(), b)), Seq.empty)
+      case a: TermDef => (Left(a), Seq.empty)
+      case a: TypeDef => (Right(a), Seq.empty)
+      case h: AstHole => (Left(CC.TermDef(CC.BindingIgnore(), CC.Hole())), Seq.empty)
+      case a: Ast => (Left(CC.TermDef(CC.BindingIgnore(), CC.Hole())), mismatchError(a, TermOrDefsSort))
+    }
+
+    val Block = SyntaxForm(
+      ConstantCommand("{", acc = Acceptance(true)),
+      Seq(
+        ChildRelationship(TermOrDefsSort, 0, MAX_BRANCH, 1)
+      ),
+      seq => WVertical(WCommand(), WSequence(WIndent(), WVertical(seq: _*)), WConstant("}")),
+      (c, seqp) => {
+        val seq = seqp.filter(!_.isInstanceOf[Hole])
+        if (seq.isEmpty) {
+          (CC.Let(Seq.empty, Prelude.TermUnit), Seq.empty)
+        } else {
+          val appended = if (!seq.last.isInstanceOf[Term]) {
+            seq ++ Seq(Prelude.TermUnit)
+          } else {
+            seq
+          }
+          val ps = appended.dropRight(1).map(ensureDefSort)
+          val k = ensureTermSort(appended.last)
+          (CC.Let(ps.map(_._1), k._1), ps.flatMap(_._2) ++ k._2)
+        }
+      },
+      isBlock = true
+    )
 
     val PrimIntConstant = SyntaxForm(
       AcceptanceCommand(s => if (Try {
@@ -221,12 +257,15 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
     //    )
 
     TermSort.forms = Seq(
+      Block,
       Application,
       Ascription,
       Lambda,
       PrimIntConstant,
       Binding
     )
+
+    TermOrDefsSort.forms = Seq(TermDef, TypeDef) ++ TermSort.forms
 
     BindingAndTypeSort.forms = Seq(
       BindingAndType
@@ -241,6 +280,9 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
     TypeBindingSort.forms = Seq(TypeBinding)
 
     val Forms = Seq(
+      Block,
+      TermDef,
+      TypeDef,
       Application,
       Ascription,
       Lambda,

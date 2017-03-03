@@ -316,6 +316,21 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
             delog(state.root.toString)
           case 'i' => // enter insert mode
             if (state.selection.isDefined) startInsert(Some(0))
+          case 'b' =>
+            var tt = state.selection
+            while (tt.isDefined) {
+              val t = tt.get
+              t.parent.foreach(p => {
+                if (p.form.isDefined && p.form.get.isBlock) {
+                  val i = p.indexOf(t)
+                  val c = new Tree(None)
+                  p.insert(i + 1, c)
+                  state.selection = Some(c)
+                  startInsert(Some(0))
+                }
+              })
+              tt = t.parent
+            }
           case 'o' => // new empty sibling node next to this node
             state.selection.foreach(t => {
               if (t.parent.isEmpty) {
