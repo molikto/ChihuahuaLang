@@ -81,11 +81,12 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
               (sort.map(_.forms).getOrElse(Lang.forms), true)
           }
       }
-      forms.find(_.command.accept(command).exists(_.eager)) match {
+      forms.map(f => (f, f.command.accept(command))).find(_._2.exists(_.eager)) match {
         case Some(f) =>
-          selection.form = Some(f)
+          selection.form = Some(f._1)
           val emptyBefore = selection.command.isEmpty
-          selection.command = command
+          val c = if (f._2.get.containsCurrent) command else command.dropRight(1)
+          selection.command = c
           createChildsForNewCommand(selection)
           if (jump) insertAtNextHoleOrExit(emptyBefore)
         case None =>

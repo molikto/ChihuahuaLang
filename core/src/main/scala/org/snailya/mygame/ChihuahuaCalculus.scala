@@ -61,6 +61,10 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
 
     val TypeRecordItemSort = SyntaxSort("record type item", null)
 
+    val CaseItemSort = SyntaxSort("case item", null)
+
+    val TypeVariantItemSort = SyntaxSort("variant type item", null)
+
     val Sorts = Seq(
       TermSort,
       TermOrDefsSort,
@@ -69,7 +73,9 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
       TypeBindingSort,
       BindingAndTypeSort,
       RecordItemSort,
-      TypeRecordItemSort
+      TypeRecordItemSort,
+      CaseItemSort,
+      TypeVariantItemSort
     )
 
 
@@ -253,6 +259,8 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
       }
     )
 
+    // TODO tuples needs look ahead...
+
     val Record = SyntaxForm(
       ConstantCommand("[", acc = Acceptance(true)),
       Seq(ChildRelationship(RecordItemSort, 0, MAX_BRANCH, 1, sepCommand = Some(','))),
@@ -271,7 +279,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
       seq => WSequence(WCommand(), WConstant(" : "), seq.head),
       (c, seqp) => {
         val ps = ensureTypeSort(seqp.head)
-        (CC.TypeRecordItem(c, ps._1), ps._2)
+        (CC.NameAndType(c, ps._1), ps._2)
       }
     )
 
@@ -281,9 +289,48 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
       seq => WSequence(WCommand() +: sep(seq, () => WConstant(", ")) :+ WConstant("]"): _*),
       (c, seq) => {
         val nHole = seq.filter(!_.isInstanceOf[AstHole])
-        val rs = nHole.filter(_.isInstanceOf[CC.TypeRecordItem]).map(_.asInstanceOf[CC.TypeRecordItem])
-        val es = nHole.filter(!_.isInstanceOf[CC.TypeRecordItem]).flatMap(a => mismatchError(a, TypeRecordItemSort))
+        val rs = nHole.filter(_.isInstanceOf[CC.NameAndType]).map(_.asInstanceOf[CC.NameAndType])
+        val es = nHole.filter(!_.isInstanceOf[CC.NameAndType]).flatMap(a => mismatchError(a, TypeRecordItemSort))
         (CC.TypeRecord(rs), es)
+      }
+    )
+
+    // we currantly use a rotation command.. if we want to implement ones without #, we need to declear variables...
+    val Tagging = SyntaxForm(
+      AcceptanceCommand(s =>
+        if (s.nonEmpty && s.endsWith("#") && BindingCommand.accept(s.dropRight(1)).nonEmpty)
+          Some(Acceptance(true, containsCurrent = false))
+        else None
+      ),
+      Seq(ChildRelationshipFixed(TermSort, 1)),
+      seq => WSequence(WCommand(), WConstant("#"), seq.head),
+      (c, seq) => {
+        val ps = ensureTermSort(seq.head)
+        (CC.Tagging(c, ps._1), ps._2)
+      }
+    )
+
+    val TypeVariantItem = SyntaxForm(
+      BindingCommand,
+      Seq(ChildRelationshipFixed(TypeSort, 1, transformCommand = Some('#'))),
+      seq => WSequence(WCommand(), WConstant(" # "), seq.head),
+      (c, seqp) => {
+        val ps = ensureTypeSort(seqp.head)
+        (CC.NameAndType(c, ps._1), ps._2)
+      }
+    )
+
+    // TODO support default type unit...
+
+    val TypeVariant = SyntaxForm(
+      ConstantCommand("variant"),
+      Seq(ChildRelationship(TypeVariantItemSort, 0, MAX_BRANCH, 1, sepCommand = Some(','))),
+      seq => WSequence(WCommand() +: WConstant("{") +: sep(seq, () => WConstant(", ")) :+ WConstant("}"): _*),
+      (c, seq) => {
+        val nHole = seq.filter(!_.isInstanceOf[AstHole])
+        val rs = nHole.filter(_.isInstanceOf[CC.NameAndType]).map(_.asInstanceOf[CC.NameAndType])
+        val es = nHole.filter(!_.isInstanceOf[CC.NameAndType]).flatMap(a => mismatchError(a, TypeVariantItemSort))
+        (CC.TypeVariant(rs), es)
       }
     )
 
@@ -308,6 +355,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
     //    )
 
     TermSort.forms = Seq(
+      Tagging,
       Record,
       Block,
       Application,
@@ -327,7 +375,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
       Binding
     )
 
-    TypeSort.forms = Seq(TypeFunction, TypeBinding, TypeRecord)
+    TypeSort.forms = Seq(TypeVariant, TypeFunction, TypeBinding, TypeRecord)
 
     TypeBindingSort.forms = Seq(TypeBinding)
 
@@ -335,7 +383,11 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
 
     TypeRecordItemSort.forms = Seq(TypeRecordItem)
 
+    TypeVariantItemSort.forms = Seq(TypeVariantItem)
+
     val Forms = Seq(
+      TypeVariant,
+      Tagging,
       Record,
       TypeRecord,
       Block,
@@ -351,7 +403,9 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
       RecordItem,
       TypeRecordItem,
       Binding,
-      BindingAndType)
+      BindingAndType,
+      TypeVariantItem
+    )
 
     override val Lang = Language(Sorts, Forms, Some(TermSort))
 

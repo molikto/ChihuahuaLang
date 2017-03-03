@@ -48,16 +48,18 @@ trait ChihuahuaCalculusAst {
   case class Record(ts: Seq[RecordItem]) extends Term
   case class Projection(l: Term, r: String) extends Term
 
-  case class TypeRecordItem(b: String, t: Type) extends Ast
-  case class TypeRecord(ts: Seq[TypeRecordItem]) extends Type
+  case class NameAndType(b: String, t: Type) extends Ast
+  case class TypeRecord(ts: Seq[NameAndType]) extends Type
 
   /**
     * variant
     */
   case class Tagging(name: String, term: Term) extends Term
-  case class Case(t: Term, cs: Seq[(String, Binding, Term)]) extends Term
 
-  case class TypeVariant(vs: Seq[(String, Type)]) extends Type
+  case class CaseItem(nam: String, bind: Binding, term: Term) extends Ast
+  case class Case(t: Term, cs: Seq[CaseItem]) extends Term
+
+  case class TypeVariant(vs: Seq[NameAndType]) extends Type
 
   /**
     * ref
@@ -67,8 +69,8 @@ trait ChihuahuaCalculusAst {
   case class Read(x: Term) extends Term
 
   case class RefType(x: Type) extends Type
-  case class SinkType(x: Type) extends Type
-  case class SourceType(x: Type) extends Type
+//  case class SinkType(x: Type) extends Type
+//  case class SourceType(x: Type) extends Type
 
   /**
     * let

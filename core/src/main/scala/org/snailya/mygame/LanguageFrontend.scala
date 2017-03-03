@@ -36,7 +36,7 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
   def compile(l: T): Either[String, Seq[Error]]
 
 
-  case class Acceptance(eager: Boolean)
+  case class Acceptance(eager: Boolean, containsCurrent: Boolean = true)
 
   abstract class Command() {
     def accept(s: String): Option[Acceptance]
@@ -60,6 +60,7 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
   case class SyntaxSort(name: String, var forms: Seq[SyntaxForm] /* var only to construct cyclic reference */)
 
   case class ChildRelationship(sort: SyntaxSort, min: Int, max: Int, init: Int,
+    transformCommand: Option[Char] = None,
     rotationCommand: Option[Char] = None, // used to wrap the current child into the form here
     sepCommand: Option[Char] = None, // used to create a vararg sibling after the current vararg
     createCommand: Option[Char] = None // used to create a vararg child, when their is no this vararg
@@ -70,7 +71,7 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
   }
 
 
-  def ChildRelationshipFixed(sort: SyntaxSort, c: Int, rotationCommand: Option[Char] = None, createCommand: Option[Char] = None) = ChildRelationship(sort, c, c, c, rotationCommand = rotationCommand, createCommand = createCommand)
+  def ChildRelationshipFixed(sort: SyntaxSort, c: Int, rotationCommand: Option[Char] = None, createCommand: Option[Char] = None, transformCommand: Option[Char] = None) = ChildRelationship(sort, c, c, c, rotationCommand = rotationCommand, createCommand = createCommand, transformCommand = transformCommand)
 
   def sep[T](l: Seq[T], sep: () => T) : Seq[T] = l.dropRight(1).flatMap(a => Seq(a, sep())) ++ l.takeRight(1)
 
