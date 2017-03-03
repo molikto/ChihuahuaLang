@@ -90,7 +90,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
       seq => WCommand(),
       (c, seq) => emptyError(CC.TypeBindingName(c))
     )
-
+    
     val Lambda = SyntaxForm(
       AcceptanceCommand(s => if (s == "\\") Some(Acceptance(true)) else if (s == "lam") Some(Acceptance(false)) else None),
       Seq(
@@ -118,12 +118,32 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
         ChildRelationshipFixed(TermSort, 1, rotationCommand = Some('(')),
         ChildRelationship(TermSort, 0, MAX_BRANCH, 1, sepCommand = Some(','))
       ),
-      seq => WSequence(Seq(seq.head, WCommand("(")) ++ sep(seq.tail, () => WConstant(", ")) ++ Seq(WConstant(")")) : _*),
+      seq => WSequence(Seq(seq.head, WCommand("(")) ++ sep(seq.tail, () => WConstant(", ")) ++ Seq(WConstant(")")): _*),
       (_, seq) => {
         val ps = seq.map(ensureTermSort)
         val ts = ps.map(_._1)
         val es = ps.flatMap(_._2)
         (CC.Application(ts.head, ts.tail), es)
+      }
+    )
+
+    val TypeFunction = SyntaxForm(
+      ConstantCommand("pi"),
+      Seq(
+        ChildRelationship(TypeSort, 0, MAX_BRANCH, 1, sepCommand = Some(',')),
+        ChildRelationshipFixed(TypeSort, 1)
+      ),
+      seq =>
+        WSequence(
+          optDelimit(WConstant("("),
+            sep(seq.dropRight(1), () => WConstant(", ")),
+            WConstant(")")) ++
+            Seq(WConstant(" "), WCommand("⇒"), WConstant(" "), seq.last): _*),
+      (_, seq) => {
+        val bs = seq.map(ensureTypeSort)
+        val bst = bs.map(_._1)
+        val bse = bs.flatMap(_._2)
+        (CC.TypeFunction(bst.dropRight(1), bst.last), bse)
       }
     )
 
@@ -137,7 +157,6 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
     //      (c, seq) => CC.Application(seq(0), seq(1))
     //    )
     //
-
 
 
     /* val Definition = SyntaxForm(
@@ -171,13 +190,13 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
     //    Term.forms = Seq(Reference)
     //    Binding.forms = Seq(Reference)
 
-//    val Sorts = Seq(
-//      TermSort,
-//      BindingSort,
-//      TypeSort,
-//      TypeBindingSort,
-//      BindingOptionalTypeSort
-//    )
+    //    val Sorts = Seq(
+    //      TermSort,
+    //      BindingSort,
+    //      TypeSort,
+    //      TypeBindingSort,
+    //      BindingOptionalTypeSort
+    //    )
 
     TermSort.forms = Seq(
       Application,
@@ -194,13 +213,14 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
       Binding
     )
 
-    TypeSort.forms = Seq(TypeBinding)
+    TypeSort.forms = Seq(TypeFunction, TypeBinding)
 
     TypeBindingSort.forms = Seq(TypeBinding)
 
     val Forms = Seq(
       Application,
       Lambda,
+      TypeFunction,
       // dynamic
       PrimIntConstant,
       // bottom

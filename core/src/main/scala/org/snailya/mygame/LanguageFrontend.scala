@@ -74,6 +74,8 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
 
   def sep[T](l: Seq[T], sep: () => T) : Seq[T] = l.dropRight(1).flatMap(a => Seq(a, sep())) ++ l.takeRight(1)
 
+  def optDelimit[T](left: T, seq: Seq[T], right: T): Seq[T] = if (seq.size == 1) seq else left +: seq :+ right
+
   val MAX_BRANCH = Integer.MAX_VALUE / 100
 
   case class SyntaxForm(command: Command,
