@@ -279,15 +279,16 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
             if (state.selection.isDefined) startInsert(Some(0))
           case 'n' => // new empty sibling node next to this node
             state.selection.foreach(t => {
-              if (t.parent.isEmpty) {
-                state.selection = Some(t.appendNew())
-              } else {
-                val p = t.parent.get
-                val i = p.indexOf(t)
-                val c = new Tree(None)
-                p.insert(i + 1, c)
-                state.selection = Some(c)
-              }
+//              if (t.parent.isEmpty) {
+//                state.selection = Some(t.appendNew())
+//              } else {
+//              }
+              val p = t.parent.get
+              val i = p.indexOf(t)
+              val c = new Tree(None)
+              p.insert(i + 1, c)
+              state.selection = Some(c)
+
               startInsert(Some(0))
             })
           case 'N' => // new empty child node

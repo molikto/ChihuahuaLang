@@ -56,7 +56,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
     )
 
 
-    override val commandDelimiter = Seq(':', ',')
+    override val commandDelimiter = Seq(':', ',', '(')
 
     val BindingCommand = AcceptanceCommand(s => Some(Acceptance(false)))
 
@@ -112,6 +112,21 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
     )
 
 
+    val Application = SyntaxForm(
+      ConstantCommand("("),
+      Seq(
+        ChildRelationshipFixed(TermSort, 1),
+        ChildRelationship(TermSort, 0, MAX_BRANCH, 1, sepCommand = Some(','))
+      ),
+      seq => WSequence(Seq(seq.head, WCommand("(")) ++ sep(seq.tail, () => WConstant(", ")) ++ Seq(WConstant(")")) : _*),
+      (_, seq) => {
+        val ps = seq.map(ensureTermSort)
+        val ts = ps.map(_._1)
+        val es = ps.flatMap(_._2)
+        (CC.Application(ts.head, ts.tail), es)
+      }
+    )
+
     //    val Application = SyntaxForm(
     //      ConstantCommand("("),
     //      Seq(Term, Term),
@@ -165,6 +180,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
 //    )
 
     TermSort.forms = Seq(
+      Application,
       Lambda,
       PrimIntConstant,
       Binding
@@ -183,6 +199,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusAst {
     TypeBindingSort.forms = Seq(TypeBinding)
 
     val Forms = Seq(
+      Application,
       Lambda,
       // dynamic
       PrimIntConstant,

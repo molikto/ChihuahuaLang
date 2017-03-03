@@ -76,9 +76,9 @@ object UntypedArithmetic {
       seq => {
         WVertical(
           WSequence(WCommand(), WConstant(" "), seq(0)),
-          WSequence(WIndent, seq(1)),
+          WSequence(WIndent(), seq(1)),
           WConstant("else"),
-          WSequence(WIndent, seq(2))
+          WSequence(WIndent(), seq(2))
         )
       },
       (name, childs) => emptyError(UAA.If(childs(0), childs(1), childs(2)))

@@ -57,14 +57,17 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
   case class SyntaxSort(name: String, var forms: Seq[SyntaxForm] /* var only to construct cyclic reference */)
 
   case class ChildRelationship(sort: SyntaxSort, min: Int, max: Int, init: Int,
-    sepCommand: Option[Char] = None,
-    createCommand: Option[Char] = None) {
+    rotationCommand: Option[Char] = None, // used to wrap the current child into the form here
+    sepCommand: Option[Char] = None, // used to create a vararg sibling after the current vararg
+    createCommand: Option[Char] = None // used to create a vararg child, when their is no this vararg
+  ) {
     assert(max > 0 && min >= 0)
 
     assert(max != min || (sepCommand.isEmpty && createCommand.isEmpty))
   }
 
-  def ChildRelationshipFixed(sort: SyntaxSort, c: Int) = ChildRelationship(sort, c, c, c)
+
+  def ChildRelationshipFixed(sort: SyntaxSort, c: Int, rotationCommand: Option[Char] = None) = ChildRelationship(sort, c, c, c, rotationCommand = rotationCommand)
 
   def sep[T](l: Seq[T], sep: () => T) : Seq[T] = l.dropRight(1).flatMap(a => Seq(a, sep())) ++ l.takeRight(1)
 
@@ -171,7 +174,7 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
     }
   }
 
-  object WIndent extends WIndentAbs
+  case class WIndent() extends WIndentAbs
 
   case class WSequence(seq: Widget*) extends Widget {
     override def measure0(tree: Tree) = {
@@ -284,7 +287,7 @@ trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFro
       val redandant = childs.drop(max)
       layout = transformer(wanted.map(a => {a.measure(widthHint); a.layout}))
       if (max < size) {
-        layout = layouts.Default(Seq(layout, WSequence(WIndent, WVertical(redandant.map(a => {a.measure(widthHint); a.layout}): _*))))
+        layout = layouts.Default(Seq(layout, WSequence(WIndent(), WVertical(redandant.map(a => {a.measure(widthHint); a.layout}): _*))))
       }
       // this will measure the rest of the elements just created by the transformer
       // also one child might set the command layout property
