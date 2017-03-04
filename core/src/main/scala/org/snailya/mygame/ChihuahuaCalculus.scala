@@ -296,6 +296,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
     )
 
     // we currantly use a rotation command.. if we want to implement ones without #, we need to declear variables...
+    // TODO this is actually pretty bad... I am sure it will not work in certain cases.. it is better to be a command..
     val Tagging = SyntaxForm(
       AcceptanceCommand(s =>
         if (s.nonEmpty && s.endsWith("#") && BindingCommand.accept(s.dropRight(1)).nonEmpty)
@@ -372,6 +373,47 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
       (c, seq) => emptyError(CC.PrimIntConstant(Integer.parseInt(c)))
     )
 
+    val Ref = SyntaxForm(
+      ConstantCommand("&", acc = Acceptance(true)),
+      Seq(ChildRelationshipFixed(TermSort, 1)),
+      seq => WSequence(WCommand(), seq.head),
+      (_, seq) => {
+        val t = ensureTermSort(seq.head)
+        (CC.Ref(t._1), t._2)
+      }
+    )
+
+    val Store = SyntaxForm(
+      ConstantCommand("store"),
+      Seq(ChildRelationshipFixed(TermSort, 2)),
+      seq => WSequence(seq.head, WConstant(" "), WCommand("=&"), WConstant(" "), seq(1)),
+      (c, seq) => {
+        val t1 = ensureTermSort(seq.head)
+        val t2 = ensureTermSort(seq(1))
+        (CC.Store(t1._1, t2._1), t1._2 ++ t2._2)
+      }
+    )
+
+    val Read = SyntaxForm(
+      ConstantCommand("!", acc = Acceptance(true)),
+      Seq(ChildRelationshipFixed(TermSort, 1)),
+      seq => WSequence(WCommand("!"), seq.head),
+      (c, seq) => {
+        val t = ensureTermSort(seq.head)
+        (CC.Read(t._1), t._2)
+      }
+    )
+
+    val TypeRef = SyntaxForm(
+      ConstantCommand("&", acc = Acceptance(true)),
+      Seq(ChildRelationshipFixed(TypeSort, 1)),
+      seq => WSequence(WCommand(), seq.head),
+      (_, seq) => {
+        val t = ensureTypeSort(seq.head)
+        (CC.RefType(t._1), t._2)
+      }
+    )
+
     //    Term.forms = Seq(Reference)
     //    Binding.forms = Seq(Reference)
 
@@ -384,6 +426,9 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
     //    )
 
     TermSort.forms = Seq(
+      Ref,
+      Store,
+      Read,
       Case,
       Tagging,
       Record,
@@ -405,7 +450,7 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
       Binding
     )
 
-    TypeSort.forms = Seq(TypeVariant, TypeFunction, TypeBinding, TypeRecord)
+    TypeSort.forms = Seq(TypeRef, TypeVariant, TypeFunction, TypeBinding, TypeRecord)
 
     TypeBindingSort.forms = Seq(TypeBinding)
 
@@ -418,6 +463,10 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
     CaseItemSort.forms = Seq(CaseItem)
 
     val Forms = Seq(
+      Ref,
+      TypeRef,
+      Store,
+      Read,
       Case,
       TypeVariant,
       Tagging,

@@ -6,5 +6,5 @@ package org.snailya.mygame
 trait ChihuahuaCalculusCompiler extends ChihuahuaCalculusAst {
 
 
-  def compile(T: Term): Either[String, Seq[Error]] = false
+  def compile(T: Term): Either[String, Seq[Error]] = Left("")
 }

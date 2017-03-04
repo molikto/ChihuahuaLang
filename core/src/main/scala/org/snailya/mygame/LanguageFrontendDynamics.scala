@@ -209,6 +209,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
       false
     }
 
+    // TODO we only have single char commands, now, but it should be easy to extends this by adding a tokenlizer in front of it
     override def keyTyped(character: Char): Boolean = {
       needsRemeasure = true
       debugPreviousCommand = character
