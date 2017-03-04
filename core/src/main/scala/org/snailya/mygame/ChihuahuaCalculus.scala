@@ -442,7 +442,14 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
 
     override val Lang = Language(Sorts, Forms, Some(TermSort))
 
-    override def compile(l: Ast) = Left("")
+    override def compile(l: Ast): Either[String, Seq[Error]] = {
+      val t = ensureTermSort(l)
+      if (t._2.nonEmpty) {
+        Right(t._2)
+      } else {
+        CC.compile(t._1)
+      }
+    }
 
     override def newHole() = CC.AstHole()
 

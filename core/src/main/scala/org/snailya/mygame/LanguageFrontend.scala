@@ -21,13 +21,13 @@ abstract class AstBaseWithPositionData {
   // this is a hack now, in case of textural language, it will be something like (line, char)...
 }
 
+case class Error(t: Object, s: String) {
+}
+
 // base class for a frontend of a programming language with AST type T and a subtype of T which is a hole
 // we don't support multi-sorted language, this makes little sense now because we want to support mal-shaped ast
 trait LanguageFrontend[T <: AstBaseWithPositionData, H <: T] extends LanguageFrontendStyle {
 
-  case class Error(t: Object, s: String) {
-    def cast: Tree = t.asInstanceOf[Tree] // this is the only type cast we use now
-  }
 
   val Lang: Language
 

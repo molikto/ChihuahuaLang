@@ -483,6 +483,8 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
 
   val commandDelimiter: Seq[Char] = Seq.empty
 
+  def cast(e: Error) = e.t.asInstanceOf[Tree]
+
   def renderFrontend(delta: Float) = {
     val timeStart = System.nanoTime()
     var timeMeasureEnd = timeStart
@@ -499,7 +501,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
       state.root.measure(screenPixelWidth - Size8 * 2)
 
       for (p <- state.errors) {
-        p.cast.layout.bg = ErrorColor
+        cast(p).layout.bg = ErrorColor
       }
 
       state.selection.foreach(a => {
@@ -515,7 +517,7 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
     state.root.layout.draw(Size8, Size8)
     for (p <- state.errors) {
       val glyph = Font.measure(p.s)
-      Font.draw(screenPixelWidth - Size8 - glyph.width, p.cast.layout.absY, p.s)
+      Font.draw(screenPixelWidth - Size8 - glyph.width, cast(p).layout.absY, p.s)
     }
     val t1 = (timeMeasureEnd - timeStart) / 1000000
     val t2 = (System.nanoTime() - timeMeasureEnd) / 1000000
