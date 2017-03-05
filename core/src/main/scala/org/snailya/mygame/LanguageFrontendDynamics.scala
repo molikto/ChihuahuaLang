@@ -484,7 +484,11 @@ trait LanguageFrontendDynamics[T <: AstBaseWithPositionData, H <: T] extends Lan
 
   val commandDelimiter: Seq[Char] = Seq.empty
 
-  def cast(e: Error) = e.t.asInstanceOf[Tree]
+  def cast(e: Error) = {
+    // TODO t is null sometimes because of our frontend...
+    if (e.t == null) state.root
+    else e.t.asInstanceOf[Tree]
+  }
 
   def renderFrontend(delta: Float) = {
     val timeStart = System.nanoTime()

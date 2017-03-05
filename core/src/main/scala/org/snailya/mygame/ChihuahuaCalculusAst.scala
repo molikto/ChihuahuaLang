@@ -5,26 +5,26 @@ package org.snailya.mygame
   */
 trait ChihuahuaCalculusAst {
 
-  abstract class Ast extends AstBaseWithPositionData
+  sealed abstract class Ast extends AstBaseWithPositionData
   case class AstHole() extends Ast
 
-  abstract class Term extends Ast
+  sealed abstract class Term extends Ast
   case class Hole() extends Term // when it construct a hole, it will be
 
-  abstract class Type extends Ast
+  sealed abstract class Type extends Ast
   case class TypeHole() extends Type
 
+  // we don't split NType with Type now...
+  // only used as NType now...
+  case class PrimitiveType(n: String) extends Type
 
-  object Prelude {
-    val TermUnit = BindingName("unit")
-  }
-
-  abstract class Binding() extends Term
+  sealed abstract class Binding() extends Term
   case class BindingName(name: String) extends Binding
   case class BindingHole() extends Binding
-  case class BindingIgnore() extends Binding
 
-  abstract class TypeBinding() extends Type
+  val BindingIgnore = BindingName("")
+
+  sealed abstract class TypeBinding() extends Type
   case class TypeBindingName(name: String) extends TypeBinding
   case class TypeBindingHole() extends TypeBinding
 
@@ -34,6 +34,8 @@ trait ChihuahuaCalculusAst {
 
   /**
     * lambda
+    *
+    * the binding is used both as the curry style and church style lambda
     */
   case class BindingOptionalType(binding: Binding, ty: Option[Type]) extends Ast
   case class Lambda(parameters: Seq[BindingOptionalType],  body: Term) extends Term
@@ -61,6 +63,7 @@ trait ChihuahuaCalculusAst {
 
   case class TypeVariant(vs: Seq[NameAndType]) extends Type
 
+
   /**
     * ref
     */
@@ -75,7 +78,7 @@ trait ChihuahuaCalculusAst {
   /**
     * let
     */
-  case class TermDef(name: Binding, Term: Term) extends Ast
+  case class TermDef(name: Binding, term: Term) extends Ast
   case class TypeDef(name: TypeBinding, t: Type) extends Ast
   case class Let(bindings: Seq[Either[TermDef, TypeDef]], body: Term) extends Term
 

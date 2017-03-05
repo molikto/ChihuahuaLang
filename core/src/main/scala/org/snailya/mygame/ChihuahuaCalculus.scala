@@ -218,10 +218,10 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
     )
 
     def ensureDefSort(t: Ast): (Either[TermDef, TypeDef], Seq[Error]) = t match {
-      case b: Term => (Left(CC.TermDef(CC.BindingIgnore(), b)), Seq.empty)
+      case b: Term => (Left(CC.TermDef(CC.BindingIgnore, b)), Seq.empty)
       case a: TermDef => (Left(a), Seq.empty)
       case a: TypeDef => (Right(a), Seq.empty)
-      case a: Ast => (Left(CC.TermDef(CC.BindingIgnore(), CC.Hole())), mismatchError(a, TermOrDefsSort))
+      case a: Ast => (Left(CC.TermDef(CC.BindingIgnore, CC.Hole())), mismatchError(a, TermOrDefsSort))
     }
 
     val Block = SyntaxForm(
@@ -231,12 +231,13 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
       ),
       seq => WVertical(WCommand(), WSequence(WIndent(), WVertical(seq: _*)), WConstant("}")),
       (c, seqp) => {
+        val TermUnit = BindingName("unit")
         val seq = seqp.filter(!_.isInstanceOf[AstHole])
         if (seq.isEmpty) {
-          (CC.Let(Seq.empty, Prelude.TermUnit), Seq.empty)
+          (CC.Let(Seq.empty, TermUnit), Seq.empty)
         } else {
           val appended = if (!seq.last.isInstanceOf[Term]) {
-            seq ++ Seq(Prelude.TermUnit)
+            seq ++ Seq(TermUnit)
           } else {
             seq
           }
@@ -247,7 +248,6 @@ object ChihuahuaCalculus extends ChihuahuaCalculusCompiler {
       },
       isBlock = true
     )
-
 
     val RecordItem = SyntaxForm(
       BindingCommand,

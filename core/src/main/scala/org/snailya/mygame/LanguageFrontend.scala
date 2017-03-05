@@ -21,7 +21,8 @@ abstract class AstBaseWithPositionData {
   // this is a hack now, in case of textural language, it will be something like (line, char)...
 }
 
-case class Error(t: Object, s: String) {
+case class Error(var t: Object, s: String) {
+  // assert (t != null && s != null)
 }
 
 // base class for a frontend of a programming language with AST type T and a subtype of T which is a hole
