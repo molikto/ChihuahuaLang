@@ -41,7 +41,7 @@ trait ChihuahuaCalculusCompiler extends ChihuahuaCalculusAst {
     appendTerm(BindingName(name), ty)
   }
 
-  def appendTerm(name: Binding, ty: NType) = {
+  def appendTerm(name: Binding, ty: NType): Unit = {
     name match {
       case BindingName(n) =>
         val a = CtxTerm(n, ty)
@@ -51,7 +51,7 @@ trait ChihuahuaCalculusCompiler extends ChihuahuaCalculusAst {
   }
 
 
-  def appendType(name: TypeBinding, ty: NType) = {
+  def appendType(name: TypeBinding, ty: NType): Unit = {
     name match {
       case TypeBindingName(n) =>
         val a = CtxType(n, ty)
@@ -143,6 +143,15 @@ trait ChihuahuaCalculusCompiler extends ChihuahuaCalculusAst {
         val k = normalize(b)
         val e2 = check(a, k._1)
         (k._1, k._2 ++ e2)
+      case Lambda(pas, body) =>
+        val ps = pas.map(a => normalize(a.ty.getOrElse(TypeHole())))
+        val tys = ps.map(_._1)
+        val es = ps.flatMap(_._2)
+        levelUp()
+        pas.map(_.binding).zip(tys).foreach(pair => appendTerm(pair._1, pair._2))
+        val ns = infer(body)
+        levelDown()
+        (TypeFunction(tys, ns._1), es ++ ns._2)
       case b: Binding =>
         lookupTerm(b)
       case Hole() =>
