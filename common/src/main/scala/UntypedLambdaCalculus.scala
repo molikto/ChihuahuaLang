@@ -11,6 +11,9 @@ object UntypedLambdaCalculus {
   // syntax with de Bruijn index
   sealed abstract class Term
   case class Var(i: Int) extends Term
+  case class NInt(i: Int) extends Term
+  case class NAppPlusInt(i: Int) extends Term
+  case object NPlus extends Term
   case class Abs(term: Term) extends Term
   case class App(left: Term, right: Term) extends Term
 
@@ -20,6 +23,7 @@ object UntypedLambdaCalculus {
       case v@Var(i) => if (i >= cut) Var(i + distance) else v
       case Abs(t) => Abs(rec(cut + 1, t))
       case App(l, r) => App(rec(cut, l), rec(cut, r))
+      case k => k
     }
     rec(0, term0)
   }
@@ -30,6 +34,7 @@ object UntypedLambdaCalculus {
       case v@Var(i) => if (i == depth + j) shift(depth, s) else v
       case Abs(term) => Abs(rec(depth + 1, term))
       case App(l, r) => App(rec(depth, l), rec(depth, r))
+      case k => k
     }
     rec(0, t0)
   }
@@ -37,18 +42,27 @@ object UntypedLambdaCalculus {
   // first, move the open variables in s up by 1, and substitute it into the body
   def substitutionTop(s: Term, t: Term) = shift(-1, substitution(0, shift(1, s), t))
 
-  def smallStep(t: Term): Term = {
+  def isValue(t: Term) = t match {
+    case _: NInt => true
+    case _: Abs => true
+    case _: NAppPlusInt => true
+    case NPlus => true
+    case _ => false
+  }
+
+  def smallStep(t: Term, i: Int = -1): Term = {
     def loop(t: Term): Term = t match {
-      case App(Abs(t), right: Abs) =>
-        substitutionTop(right, t)
-      case App(Abs(t), right) =>
-        App(Abs(t), loop(right))
-      case App(t1, t2) =>
-        App(loop(t1), t2)
+      case App(Abs(t), right) if isValue(right) => substitutionTop(right, t)
+      case App(Abs(t), right) => App(Abs(t), loop(right))
+      case App(NPlus, NInt(i1)) => NAppPlusInt(i1)
+      case App(NPlus, t) => App(NPlus, loop(t))
+      case App(NAppPlusInt(i2), NInt(i1)) => NInt(i1 + i2)
+      case App(a@NAppPlusInt(_), t) => App(a, loop(t))
+      case App(t1, t2) => App(loop(t1), t2)
       case _ => throw new Exception("")
     }
     var tt = t
-    Try { while (true) { tt = loop (tt) } }
+    Try { var k = 0; while (k != i) { tt = loop (tt); k += 1 } }
     tt
   }
 
@@ -56,6 +70,14 @@ object UntypedLambdaCalculus {
       case a@App(l, r) => bigStep(l) match {
         case Abs(t) =>
           bigStep(substitutionTop(bigStep(r), t))
+        case NPlus => bigStep(r) match {
+            case NInt(i) => NAppPlusInt(i)
+            case a => App(NPlus, a)
+          }
+        case k@NAppPlusInt(i) => bigStep(r) match {
+          case NInt(j) => NInt(i + j)
+          case a => App(k, a)
+        }
         case a => App(a, r)
       }
       case a => a
@@ -65,10 +87,11 @@ object UntypedLambdaCalculus {
 object tests {
   import UntypedLambdaCalculus._
 
+  val v0 = Var(0)
+  val v1 = Var(1)
+  val v2 = Var(2)
+
   def test(eval: Term => Term) = {
-    val v0 = Var(0)
-    val v1 = Var(1)
-    val v2 = Var(2)
     val tru = Abs(Abs(v1)) // \x\y.x
     val fls = Abs(Abs(v0)) // \x\y.y
     val and = Abs(Abs(App(App(v1, v0), fls))) // \a\b. ((a b) fls)
@@ -108,9 +131,13 @@ object tests {
     // Abs(Abs(App(Var(1),App(App(Abs(Abs(Var(0))),Var(1)),Var(0)))))
     eval(App(suc, c1))
     eval(App(suc, c2))
+    eval(App(App(NPlus, App(App(tru, NInt(4)), NInt(3))), NInt(4)))
   }
-  test(smallStep)
+  val omega = App(Abs(App(v0, v0)), Abs(App(v0, v0)))
+  test(a => smallStep(a))
   test(bigStep)
+
+  assert(smallStep(omega, 1) == omega)
 }
 
-//tests
+tests
