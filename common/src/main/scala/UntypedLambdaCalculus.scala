@@ -17,9 +17,10 @@ case class Lam(f: Head => Head) extends Head {
   override def app(head: Head) = f(head)
 }
 
-// this means when I am depth depth, I am referring the variable of index i
-case class Acc(depth: Int, i: Int, as: Seq[Head] = List.empty) extends Head {
-  override def app(head: Head) = Acc(depth, i,  as :+ head)
+// it is depth, or what's the index if called relative to root(of the compile or readback), or the reverse de Bruijn index
+// so for all bounded variable, it is always negative
+case class Acc(depth: Int, as: Seq[Head] = List.empty) extends Head {
+  override def app(head: Head) = Acc(depth,  as :+ head)
 }
 
 object UntypedLambdaCalculus extends App {
@@ -132,7 +133,7 @@ object UntypedLambdaCalculus extends App {
     // depth ::::  [depth = -1] \x {... depth = 0....}
     def emitScala(t: Term, depth: Int = -1): String = t match {
       case Var(i) =>
-        if (i > depth) s"Acc($depth, $i)"
+        if (i > depth) s"Acc(${i - depth - 1})"
         else "v" + (depth - i)
       case Abs(t) =>
         val d = depth + 1
@@ -146,11 +147,19 @@ object UntypedLambdaCalculus extends App {
 
     def readback(h: Head, depth: Int): Term = {
       h match {
+          // z is open
+          // it is index 2 in term
+          // computes to Acc(2 - 1 - 1) = 0
+          // or such that when depth = -1, i.e. in start states, it have index 0
+          // \x.\y.z  ...
+          // when depth = -1, x is changed to Acc(- 0 - 1 = -1)
+          // when depth = 0, y is changed to Acc(-1 -1 = -2)
+          // \x.\y.x
         case Lam(f) =>
           val d = depth + 1
-          val t = f(Acc(d, 0))
+          val t = f(Acc(-d - 1))
           Abs(readback(t, d))
-        case Acc(o, i, seq) => seq.foldLeft[Term](Var(depth - o + i)) { (l, s) =>
+        case Acc(d, seq) => seq.foldLeft[Term](Var(depth + d + 1)) { (l, s) =>
           App(l, readback(s, depth))
         }
       }
@@ -186,7 +195,7 @@ object UntypedLambdaCalculus extends App {
     val not_tru = App(not, tru)
     val not_fls = App(not, fls)
     // this is only extensively equal to or
-    val or1 = Abs(Abs(App(not, App(App(and, v1), v0))))
+    val or1 = Abs(Abs(App(not, App(App(and, App(not, v1)), App(not, v0)))))
     // or = \a\b.not ((and a) b)
     val or = Abs(Abs(App(App(v1, tru), v0)))
     // or = \a\b.((a tru) b)
@@ -198,6 +207,14 @@ object UntypedLambdaCalculus extends App {
     // ...
     val or_fls_fls = App(App(or, fls), fls) // ...
 
+    val or1_tru_tru = App(App(or1, tru), tru)
+    // (and tru tru) = ((tru tru) fls) = ((\y. tru) fls) = tru
+    val or1_tru_fls = App(App(or1, tru), fls)
+    // ...
+    val or1_fls_tru = App(App(or1, fls), tru)
+    // ...
+    val or1_fls_fls = App(App(or1, fls), fls) // ...
+
     val c0 = Abs(Abs(v0))
     val c1 = Abs(Abs(App(v1, v0)))
     val c2 = Abs(Abs(App(v1, App(v1, v0))))
@@ -207,9 +224,11 @@ object UntypedLambdaCalculus extends App {
 
     val id = Abs(v0)
 
-    val cst1 = App(id, Abs(App(App(id, v0), id)))
     // a = (λx.x)(λy. (λz.z) y (λt.t))
+    val cst1 = App(id, Abs(App(App(id, v0), id)))
     val cst1_nf = Abs(App(v0, id))
+
+    def assert_weak(a: Term, nf: Term) = assert(a != nf && a.isInstanceOf[Value])
 
     def test(eval: Term => Term) = {
       assert(eval(and_tru_tru) == tru)
@@ -222,11 +241,17 @@ object UntypedLambdaCalculus extends App {
       assert(eval(or_tru_fls) == tru)
       assert(eval(or_fls_tru) == tru)
       assert(eval(or_fls_fls) == fls)
-      eval(App(suc, c0)) // Abs(Abs(App(Var(1),App(App(Abs(Abs(Var(0))),Var(1)),Var(0)))))
-      // Abs(Abs(App(Var(1),App(App(Abs(Abs(Var(0))),Var(1)),Var(0)))))
-      eval(App(suc, c1))
-      eval(App(suc, c2))
-      eval(App(App(NativePlus, App(App(tru, NativeInt(4)), NativeInt(3))), NativeInt(4)))
+
+      assert(eval(or1_tru_tru) == tru)
+      assert(eval(or1_tru_fls) == tru)
+      assert(eval(or1_fls_tru) == tru)
+      assert(eval(or1_fls_fls) == fls)
+
+      assert_weak(eval(App(suc, c0)), c1)
+      assert_weak(eval(App(suc, c1)), c2)
+      assert_weak(eval(App(suc, c2)), c3)
+      assert_weak(eval(cst1), cst1_nf)
+      assert(eval(App(App(NativePlus, App(App(tru, NativeInt(4)), NativeInt(3))), NativeInt(4))) == NativeInt(8))
     }
 
     val omega = App(Abs(App(v0, v0)), Abs(App(v0, v0)))
@@ -238,6 +263,7 @@ object UntypedLambdaCalculus extends App {
     assert(nbe(App(suc, c1)) == c2)
     assert(nbe(App(suc, c2)) == c3)
     assert(nbe(App(suc, c3)) == c4)
+
 
     Seq(tru, fls, c0, c1, c2, c3, c4, suc).foreach(a => {
       assert(nbe(a) == a)
