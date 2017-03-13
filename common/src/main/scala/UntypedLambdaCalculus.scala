@@ -1,3 +1,5 @@
+import com.twitter.util.Eval
+
 import scala.util.Try
 
 /**
@@ -6,16 +8,43 @@ import scala.util.Try
   *
   * this is translated form book *Types and Programming Languages*, Chapter 7
   */
-object UntypedLambdaCalculus {
+
+abstract class Head() {
+  def app(head: Head): Head
+}
+
+case class Lam(f: Head => Head) extends Head {
+  override def app(head: Head) = f(head)
+}
+
+// this means when I am depth depth, I am referring the variable of index i
+case class Acc(depth: Int, i: Int, as: Seq[Head] = List.empty) extends Head {
+  override def app(head: Head) = Acc(depth, i,  as :+ head)
+}
+
+object UntypedLambdaCalculus extends App {
 
   // syntax with de Bruijn index
   sealed abstract class Term
+
+  // this is a marker for the weak-head normal form
+  trait Value
+
   case class Var(i: Int) extends Term
-  case class NInt(i: Int) extends Term
-  case class NAppPlusInt(i: Int) extends Term
-  case object NPlus extends Term
-  case class Abs(term: Term) extends Term
+
+  case class Abs(term: Term) extends Term with Value
+
   case class App(left: Term, right: Term) extends Term
+
+  case class NativeInt(i: Int) extends Term with Value
+
+  case class NativeAppPlusInt(i: Int) extends Term with Value
+
+  case object NativePlus extends Term with Value
+
+  // see paper *Full reduction at full throttle*, or *A compiled implementation of strong reduction*
+  //  sealed abstract class ExtendedTerm extends Term
+  //  case class Accumulator(v: Int, vs: Seq[Value]) extends ExtendedTerm with Value
 
   // change what the open variables refers to in term0
   def shift(distance: Int, term0: Term) = {
@@ -25,6 +54,7 @@ object UntypedLambdaCalculus {
       case App(l, r) => App(rec(cut, l), rec(cut, r))
       case k => k
     }
+
     rec(0, term0)
   }
 
@@ -36,108 +66,190 @@ object UntypedLambdaCalculus {
       case App(l, r) => App(rec(depth, l), rec(depth, r))
       case k => k
     }
+
     rec(0, t0)
   }
 
   // first, move the open variables in s up by 1, and substitute it into the body
   def substitutionTop(s: Term, t: Term) = shift(-1, substitution(0, shift(1, s), t))
 
-  def isValue(t: Term) = t match {
-    case _: NInt => true
-    case _: Abs => true
-    case _: NAppPlusInt => true
-    case NPlus => true
-    case _ => false
-  }
+  def isValue(t: Term) = t.isInstanceOf[Value]
 
+  /**
+    * or, weak head reduction
+    */
   def smallStep(t: Term, i: Int = -1): Term = {
     def loop(t: Term): Term = t match {
       case App(Abs(t), right) if isValue(right) => substitutionTop(right, t)
       case App(Abs(t), right) => App(Abs(t), loop(right))
-      case App(NPlus, NInt(i1)) => NAppPlusInt(i1)
-      case App(NPlus, t) => App(NPlus, loop(t))
-      case App(NAppPlusInt(i2), NInt(i1)) => NInt(i1 + i2)
-      case App(a@NAppPlusInt(_), t) => App(a, loop(t))
+      case App(NativePlus, NativeInt(i1)) => NativeAppPlusInt(i1)
+      case App(NativePlus, t) => App(NativePlus, loop(t))
+      case App(NativeAppPlusInt(i2), NativeInt(i1)) => NativeInt(i1 + i2)
+      case App(a@NativeAppPlusInt(_), t) => App(a, loop(t))
       case App(t1, t2) => App(loop(t1), t2)
       case _ => throw new Exception("")
     }
+
     var tt = t
-    Try { var k = 0; while (k != i) { tt = loop (tt); k += 1 } }
+    Try {
+      var k = 0; while (k != i) {
+        tt = loop(tt); k += 1
+      }
+    }
     tt
   }
 
+  /**
+    * or, weak head reduction
+    */
   def bigStep(t: Term): Term = t match {
-      case a@App(l, r) => bigStep(l) match {
-        case Abs(t) =>
-          bigStep(substitutionTop(bigStep(r), t))
-        case NPlus => bigStep(r) match {
-            case NInt(i) => NAppPlusInt(i)
-            case a => App(NPlus, a)
-          }
-        case k@NAppPlusInt(i) => bigStep(r) match {
-          case NInt(j) => NInt(i + j)
-          case a => App(k, a)
-        }
-        case a => App(a, r)
+    case a@App(l, r) => bigStep(l) match {
+      case Abs(t) =>
+        bigStep(substitutionTop(bigStep(r), t))
+      case NativePlus => bigStep(r) match {
+        case NativeInt(i) => NativeAppPlusInt(i)
+        case a => App(NativePlus, a)
       }
-      case a => a
+      case k@NativeAppPlusInt(i) => bigStep(r) match {
+        case NativeInt(j) => NativeInt(i + j)
+        case a => App(k, a)
+      }
+      case a => App(a, r)
     }
-}
+    case a => a
+  }
 
-object tests {
-  import UntypedLambdaCalculus._
+  /**
+    * normalization by evaluation
+    *
+    * val or1 = Abs(Abs(App(not, App(App(and, v1), v0)))) // or = \a\b.not ((and a) b)
+    */
 
-  val v0 = Var(0)
-  val v1 = Var(1)
-  val v2 = Var(2)
+  // Lam((v0: Head) => {Lam((v1: Head) => {(Lam((v2: Head) => {((v0).app(Lam((v3: Head) => {Lam((v4: Head) => {v0})}))).app(Lam((v3: Head) => {Lam((v4: Head) => {v1})}))})).app(((Lam((v2: Head) => {Lam((v3: Head) => {((v1).app(v0)).app(Lam((v4: Head) => {Lam((v5: Head) => {v0})}))})})).app(v1)).app(v0))})})
 
-  def test(eval: Term => Term) = {
-    val tru = Abs(Abs(v1)) // \x\y.x
+
+  def nbe(t: Term): Term = {
+    // depth ::::  [depth = -1] \x {... depth = 0....}
+    def emitScala(t: Term, depth: Int = -1): String = t match {
+      case Var(i) =>
+        if (i > depth) s"Acc($depth, $i)"
+        else "v" + (depth - i)
+      case Abs(t) =>
+        val d = depth + 1
+        s"Lam((v$d: Head) => {${emitScala(t, d)}})"
+      case App(l, r) =>
+        s"(${emitScala(l, depth)}).app(${emitScala(r, depth)})"
+    }
+
+    val text = emitScala(t)
+    val compiled = new Eval().apply[Head](text)
+
+    def readback(h: Head, depth: Int): Term = {
+      h match {
+        case Lam(f) =>
+          val d = depth + 1
+          val t = f(Acc(d, 0))
+          Abs(readback(t, d))
+        case Acc(o, i, seq) => seq.foldLeft[Term](Var(depth - o + i)) { (l, s) =>
+          App(l, readback(s, depth))
+        }
+      }
+    }
+    readback(compiled, -1)
+  }
+
+
+  object tests {
+
+    val v0 = Var(0)
+    val v1 = Var(1)
+    val v2 = Var(2)
+
+    val tru = Abs(Abs(v1))
+    // \x\y.x
     val fls = Abs(Abs(v0)) // \x\y.y
-    val and = Abs(Abs(App(App(v1, v0), fls))) // \a\b. ((a b) fls)
-    val and_tru_tru = App(App(and, tru), tru) // (and tru tru) = ((tru tru) fls) = ((\y. tru) fls) = tru
-    val and_tru_fls = App(App(and, tru), fls) // ...
-    val and_fls_tru = App(App(and, fls), tru) // ...
+
+    val and = Abs(Abs(App(App(v1, v0), fls)))
+    // \a\b. ((a b) fls)
+    val and_tru_tru = App(App(and, tru), tru)
+    // (and tru tru) = ((tru tru) fls) = ((\y. tru) fls) = tru
+    val and_tru_fls = App(App(and, tru), fls)
+    // ...
+    val and_fls_tru = App(App(and, fls), tru)
+    // ...
     val and_fls_fls = App(App(and, fls), fls) // ...
-    assert(eval(and_tru_tru) == tru)
-    assert(eval(and_tru_fls) == fls)
-    assert(eval(and_fls_tru) == fls)
-    assert(eval(and_fls_fls) == fls)
-    // this is only extensively equal to not
-    val not1 = Abs(Abs(Abs(App(App(v2, v0), v1)))) // \a\b\c. ((a c) b)
-    val not = Abs(App(App(v0, fls), tru)) // \a.((a fls) tru)
+
+    val not1 = Abs(Abs(Abs(App(App(v2, v0), v1))))
+    // \a\b\c. ((a c) b)
+    val not = Abs(App(App(v0, fls), tru))
+    // \a.((a fls) tru)
     val not_tru = App(not, tru)
     val not_fls = App(not, fls)
-    assert(eval(not_tru) == fls)
-    assert(eval(not_fls) == tru)
     // this is only extensively equal to or
-    val or1 = Abs(Abs(App(not, App(App(and, v1), v0)))) // or = \a\b.not ((and a) b)
-    val or = Abs(Abs(App(App(v1, tru), v0))) // or = \a\b.((a tru) b)
-    val or_tru_tru = App(App(or, tru), tru) // (and tru tru) = ((tru tru) fls) = ((\y. tru) fls) = tru
-    val or_tru_fls = App(App(or, tru), fls) // ...
-    val or_fls_tru = App(App(or, fls), tru) // ...
+    val or1 = Abs(Abs(App(not, App(App(and, v1), v0))))
+    // or = \a\b.not ((and a) b)
+    val or = Abs(Abs(App(App(v1, tru), v0)))
+    // or = \a\b.((a tru) b)
+    val or_tru_tru = App(App(or, tru), tru)
+    // (and tru tru) = ((tru tru) fls) = ((\y. tru) fls) = tru
+    val or_tru_fls = App(App(or, tru), fls)
+    // ...
+    val or_fls_tru = App(App(or, fls), tru)
+    // ...
     val or_fls_fls = App(App(or, fls), fls) // ...
-    assert(eval(or_tru_tru) == tru)
-    assert(eval(or_tru_fls) == tru)
-    assert(eval(or_fls_tru) == tru)
-    assert(eval(or_fls_fls) == fls)
+
     val c0 = Abs(Abs(v0))
     val c1 = Abs(Abs(App(v1, v0)))
     val c2 = Abs(Abs(App(v1, App(v1, v0))))
     val c3 = Abs(Abs(App(v1, App(v1, App(v1, v0)))))
     val c4 = Abs(Abs(App(v1, App(v1, App(v1, App(v1, v0))))))
-    val suc = Abs(Abs(Abs(App(v1, App(App(v2, v1), v0)))))
-    eval(App(suc, c0)) // Abs(Abs(App(Var(1),App(App(Abs(Abs(Var(0))),Var(1)),Var(0)))))
-    // Abs(Abs(App(Var(1),App(App(Abs(Abs(Var(0))),Var(1)),Var(0)))))
-    eval(App(suc, c1))
-    eval(App(suc, c2))
-    eval(App(App(NPlus, App(App(tru, NInt(4)), NInt(3))), NInt(4)))
-  }
-  val omega = App(Abs(App(v0, v0)), Abs(App(v0, v0)))
-  test(a => smallStep(a))
-  test(bigStep)
+    val suc = Abs(Abs(Abs(App(v1, App(App(v2, v1), v0))))) // scc = λn. λs. λz. s (n s z);
 
-  assert(smallStep(omega, 1) == omega)
+    val id = Abs(v0)
+
+    val cst1 = App(id, Abs(App(App(id, v0), id)))
+    // a = (λx.x)(λy. (λz.z) y (λt.t))
+    val cst1_nf = Abs(App(v0, id))
+
+    def test(eval: Term => Term) = {
+      assert(eval(and_tru_tru) == tru)
+      assert(eval(and_tru_fls) == fls)
+      assert(eval(and_fls_tru) == fls)
+      assert(eval(and_fls_fls) == fls)
+      assert(eval(not_tru) == fls)
+      assert(eval(not_fls) == tru)
+      assert(eval(or_tru_tru) == tru)
+      assert(eval(or_tru_fls) == tru)
+      assert(eval(or_fls_tru) == tru)
+      assert(eval(or_fls_fls) == fls)
+      eval(App(suc, c0)) // Abs(Abs(App(Var(1),App(App(Abs(Abs(Var(0))),Var(1)),Var(0)))))
+      // Abs(Abs(App(Var(1),App(App(Abs(Abs(Var(0))),Var(1)),Var(0)))))
+      eval(App(suc, c1))
+      eval(App(suc, c2))
+      eval(App(App(NativePlus, App(App(tru, NativeInt(4)), NativeInt(3))), NativeInt(4)))
+    }
+
+    val omega = App(Abs(App(v0, v0)), Abs(App(v0, v0)))
+    test(a => smallStep(a))
+    test(bigStep)
+
+    assert(nbe(cst1) == cst1_nf)
+    assert(nbe(App(suc, c0)) == c1)
+    assert(nbe(App(suc, c1)) == c2)
+    assert(nbe(App(suc, c2)) == c3)
+    assert(nbe(App(suc, c3)) == c4)
+
+    Seq(tru, fls, c0, c1, c2, c3, c4, suc).foreach(a => {
+      assert(nbe(a) == a)
+    })
+
+    assert(smallStep(omega, 1) == omega)
+  }
+
+  override def main(args: Array[String]) = UntypedLambdaCalculus.tests
+
 }
 
-tests
+
+
+

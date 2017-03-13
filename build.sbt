@@ -36,7 +36,8 @@ lazy val sharedSettings: Seq[Def.Setting[_]] = Seq(
     "-target:jvm-1.6"
   ),
   libraryDependencies ++= Seq(
-    "com.lihaoyi" %% "upickle" % "0.4.3"
+    "com.lihaoyi" %% "upickle" % "0.4.3",
+    "com.twitter" %% "util-eval" % "6.42.0"
   ),
   cancelable := true,
   exportJars := true
