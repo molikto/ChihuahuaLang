@@ -27,21 +27,16 @@ object UntypedLambdaCalculus extends App {
 
   // syntax with de Bruijn index
   sealed abstract class Term
-
-  // this is a marker for the weak-head normal form
-  trait Value
-
+  sealed abstract class Value extends Term
   case class Var(i: Int) extends Term
-
-  case class Abs(term: Term) extends Term with Value
-
+  case class Abs(term: Term) extends Value
   case class App(left: Term, right: Term) extends Term
 
-  case class NativeInt(i: Int) extends Term with Value
+  case class NativeInt(i: Int) extends Value
 
-  case class NativeAppPlusInt(i: Int) extends Term with Value
+  case class NativeAppPlusInt(i: Int) extends Value
 
-  case object NativePlus extends Term with Value
+  case object NativePlus extends Value
 
   // see paper *Full reduction at full throttle*, or *A compiled implementation of strong reduction*
   //  sealed abstract class ExtendedTerm extends Term
@@ -125,14 +120,19 @@ object UntypedLambdaCalculus extends App {
   /**
     * normalization by evaluation
     *
-    * val or1 = Abs(Abs(App(not, App(App(and, v1), v0)))) // or = \a\b.not ((and a) b)
+  // depth ::::  [depth = -1] \x {... depth = 0....}
+    *
+  // z is open
+        // it is index 2 in term
+        // computes to Acc(2 - 1 - 1) = 0
+        // or such that when depth = -1, i.e. in start states, it have index 0
+        // \x.\y.z  ...
+        // when depth = -1, x is changed to Acc(- 0 - 1 = -1)
+        // when depth = 0, y is changed to Acc(-1 -1 = -2)
+        // \x.\y.x
     */
 
-  // Lam((v0: Head) => {Lam((v1: Head) => {(Lam((v2: Head) => {((v0).app(Lam((v3: Head) => {Lam((v4: Head) => {v0})}))).app(Lam((v3: Head) => {Lam((v4: Head) => {v1})}))})).app(((Lam((v2: Head) => {Lam((v3: Head) => {((v1).app(v0)).app(Lam((v4: Head) => {Lam((v5: Head) => {v0})}))})})).app(v1)).app(v0))})})
-
-
   def nbe(t: Term): Term = {
-    // depth ::::  [depth = -1] \x {... depth = 0....}
     def emitScala(t: Term, depth: Int = -1): String = t match {
       case Var(i) =>
         if (i > depth) s"Acc(${i - depth - 1})"
@@ -143,29 +143,18 @@ object UntypedLambdaCalculus extends App {
       case App(l, r) =>
         s"(${emitScala(l, depth)}).app(${emitScala(r, depth)})"
     }
-
     val text = emitScala(t)
     val compiled = new Eval().apply[Head](text)
-
-    def readback(h: Head, depth: Int): Term = h match {
+    def readback(h: Head, depth: Int = -1): Term = h match {
       case Lam(f) =>
-        // z is open
-        // it is index 2 in term
-        // computes to Acc(2 - 1 - 1) = 0
-        // or such that when depth = -1, i.e. in start states, it have index 0
-        // \x.\y.z  ...
-        // when depth = -1, x is changed to Acc(- 0 - 1 = -1)
-        // when depth = 0, y is changed to Acc(-1 -1 = -2)
-        // \x.\y.x
         val d = depth + 1
-        val t = f(Acc(-d - 1))
-        Abs(readback(t, d))
-      case Acc(d, seq) => seq.foldLeft[Term](Var(depth + d + 1)) { (l, s) =>
-        App(l, readback(s, depth))
-      }
+        Abs(readback(f(Acc(-d - 1)), d))
+      case Acc(d, seq) =>
+        seq.foldLeft[Term](Var(depth + d + 1)) { (l, s) =>
+          App(l, readback(s, depth))
+        }
     }
-
-    readback(compiled, -1)
+    readback(compiled)
   }
 
 
@@ -223,9 +212,8 @@ object UntypedLambdaCalculus extends App {
     val c4 = Abs(Abs(App(v1, App(v1, App(v1, App(v1, v0))))))
     val suc = Abs(Abs(Abs(App(v1, App(App(v2, v1), v0))))) // scc = λn. λs. λz. s (n s z);
 
-    val id = Abs(v0)
-
     // a = (λx.x)(λy. (λz.z) y (λt.t))
+    val id = Abs(v0)
     val cst1 = App(id, Abs(App(App(id, v0), id)))
     val cst1_nf = Abs(App(v0, id))
 
