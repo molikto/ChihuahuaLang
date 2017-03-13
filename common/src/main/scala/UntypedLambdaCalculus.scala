@@ -20,7 +20,7 @@ case class Lam(f: Head => Head) extends Head {
 // it is depth, or what's the index if called relative to root(of the compile or readback), or the reverse de Bruijn index
 // so for all bounded variable, it is always negative
 case class Acc(depth: Int, as: Seq[Head] = List.empty) extends Head {
-  override def app(head: Head) = Acc(depth,  as :+ head)
+  override def app(head: Head) = Acc(depth, as :+ head)
 }
 
 object UntypedLambdaCalculus extends App {
@@ -93,8 +93,10 @@ object UntypedLambdaCalculus extends App {
 
     var tt = t
     Try {
-      var k = 0; while (k != i) {
-        tt = loop(tt); k += 1
+      var k = 0;
+      while (k != i) {
+        tt = loop(tt);
+        k += 1
       }
     }
     tt
@@ -145,25 +147,24 @@ object UntypedLambdaCalculus extends App {
     val text = emitScala(t)
     val compiled = new Eval().apply[Head](text)
 
-    def readback(h: Head, depth: Int): Term = {
-      h match {
-          // z is open
-          // it is index 2 in term
-          // computes to Acc(2 - 1 - 1) = 0
-          // or such that when depth = -1, i.e. in start states, it have index 0
-          // \x.\y.z  ...
-          // when depth = -1, x is changed to Acc(- 0 - 1 = -1)
-          // when depth = 0, y is changed to Acc(-1 -1 = -2)
-          // \x.\y.x
-        case Lam(f) =>
-          val d = depth + 1
-          val t = f(Acc(-d - 1))
-          Abs(readback(t, d))
-        case Acc(d, seq) => seq.foldLeft[Term](Var(depth + d + 1)) { (l, s) =>
-          App(l, readback(s, depth))
-        }
+    def readback(h: Head, depth: Int): Term = h match {
+      case Lam(f) =>
+        // z is open
+        // it is index 2 in term
+        // computes to Acc(2 - 1 - 1) = 0
+        // or such that when depth = -1, i.e. in start states, it have index 0
+        // \x.\y.z  ...
+        // when depth = -1, x is changed to Acc(- 0 - 1 = -1)
+        // when depth = 0, y is changed to Acc(-1 -1 = -2)
+        // \x.\y.x
+        val d = depth + 1
+        val t = f(Acc(-d - 1))
+        Abs(readback(t, d))
+      case Acc(d, seq) => seq.foldLeft[Term](Var(depth + d + 1)) { (l, s) =>
+        App(l, readback(s, depth))
       }
     }
+
     readback(compiled, -1)
   }
 
