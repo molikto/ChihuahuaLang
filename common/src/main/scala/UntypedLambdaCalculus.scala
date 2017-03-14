@@ -23,7 +23,7 @@ case class Acc(depth: Int, as: Seq[Head] = List.empty) extends Head {
   override def app(head: Head) = Acc(depth, as :+ head)
 }
 
-object UntypedLambdaCalculus extends App {
+object UntypedLambdaCalculus extends scala.App {
 
   // syntax with de Bruijn index
   sealed abstract class Term
