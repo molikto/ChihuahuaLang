@@ -1,4 +1,6 @@
+import UntypedLambdaCalculus.{Abs, App, Var}
 import com.twitter.util.Eval
+import sem.OpenReference
 
 import scala.collection.mutable
 
@@ -33,7 +35,7 @@ object sem {
   case class Split(s: Stuck, names:  Map[String, Value => Value]) extends Stuck
 
 
-  case class Lambda(fun: Seq[Value] => Value) extends Value {
+  case class Lambda(size: Int, fun: Seq[Value] => Value) extends Value {
     override def app(seq: Seq[Value]) = fun(seq)
   }
   case class Construct(name: String, apps: Value) extends Value {
@@ -153,9 +155,16 @@ trait TypeCheck {
 
   */
 
-  def readback(v: Value): Term = {
-    null
+  def readback(v: Value, depth: Int = -1): Term = {
+    v match {
+      case l@sem.Lambda(size, f) =>
+        val d = depth + 1
+        val ps = (0 until size).map(a => OpenReference(-d-1, a))
+        Lambda((0 until size).map(a => None), readback(l.app(ps)))
+      case
+    }
   }
+
   val twitterEval = new Eval()
 
   // needs to ensure term is well typed first!
@@ -181,7 +190,7 @@ trait TypeCheck {
           emitScala(left, depth)
         case Lambda(is, body) =>
           val d = depth + 1
-          s"sem.Lambda(b$d => ${emitScala(body, d)})"
+          s"sem.Lambda(${is.size}, b$d => ${emitScala(body, d)})"
         case App(left, right) =>
           s"(${emitScala(left, depth)}).app(${right.map(r => emitScala(r, depth).mkString(", "))})"
         case Pi(vs, body) =>
@@ -193,7 +202,7 @@ trait TypeCheck {
           s"sem.Record(Seq(${ms.map(a => sem.register(a, '@')).mkString(", ")}).map(lookup), Seq(${ts.map(a => emitScala(a, depth)).mkString(", ")}))"
         case Sigma(ms, vs) =>
           val d = depth + 1
-          s"sem.Pi(Seq(${ms.map(a => sem.register(a, '@')).mkString(", ")}).map(lookup), b$d => Seq(${vs.map(r => emitScala(r, d).mkString(", "))}))"
+          s"sem.Sigma(Seq(${ms.map(a => sem.register(a, '@')).mkString(", ")}).map(lookup), b$d => Seq(${vs.map(r => emitScala(r, d).mkString(", "))}))"
         case Projection(left, right) =>
           s"${emitScala(left, depth)}.projection(${sem.register(right, '@')})"
         case Sum(ts) =>
@@ -217,8 +226,7 @@ object tests extends scala.App with TypeCheck {
   def r(b: Int, r: Int) = LocalReference(b, r)
 
   // \(x : type, y: x, z: x) => x
-  val test1 = Lambda(Seq(u, r(0, 0), r(0, 0)), r(0, 0))
+  val test1 = Lambda(Seq(u, r(0, 0), r(0, 0)).map(a => Some(a)), r(0, 0))
   // sem.Lambda(b0 => b0(0))
-
   eval(test1)
 }

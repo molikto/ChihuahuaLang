@@ -27,7 +27,7 @@ case class Fix(t: Seq[Term]) extends Term with BindingSite {
 case class Ascription(left: Term, right: Term) extends Term
 
 
-case class Lambda(is: Seq[Term], body: Term) extends Term with BindingSite
+case class Lambda(is: Seq[Option[Term]], body: Term) extends Term with BindingSite
 case class Pi(is: Seq[Term], to: Term) extends Term with BindingSite
 case class App(left: Term, right: Seq[Term]) extends Term
 
