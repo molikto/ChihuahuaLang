@@ -50,34 +50,36 @@ object sem {
   // and the type of return type, if you apply it to real types, you get real values back
   // if you apply it to Accumulators, and read back, you get the Pi term in normal form
   case class Sigma(ms: Seq[String], ts: Seq[Value] => Seq[Value]) extends Value
-  case class Pi(inside: Seq[Value] => (Seq[Value], Value)) extends Value
+  case class Pi(size: Int, inside: Seq[Value] => (Seq[Value], Value)) extends Value
   case class Sum(ts: Map[String, Value]) extends Value
 
 
   case class Global(svalue: Value, stype: Value, term: Term)
   val defs = mutable.Map.empty[String, Global] // defined global variables, and their normal form and type
 
+  def global(str: String) = defs(str).svalue
 
-  // names across borders.... the ty currently is a hack
-  val _ns = mutable.Map.empty[String, Int]
-  val ns = mutable.Map.empty[Int, String]
+  object names {
+    // names across borders.... the ty currently is a hack
+    val _ns = mutable.Map.empty[String, Int]
+    val ns = mutable.Map.empty[Int, String]
 
-  var counter = 0
+    var counter = 0
 
-  def lookup(n: Int): String = ns(n).substring(1)
-  def register(s: String, ty: Char = ' '): Int = {
-    val key = ty + s
-    val old = _ns.get(key)
-    if (old.isEmpty) {
-      val c = counter + 1
-      counter = c
-      _ns.put(key, c)
-      ns.put(c, key)
-      c
-    } else old.get
+    def lookup(n: Int): String = ns(n).substring(1)
+    def register(s: String, ty: Char = ' '): Int = {
+      val key = ty + s
+      val old = _ns.get(key)
+      if (old.isEmpty) {
+        val c = counter + 1
+        counter = c
+        _ns.put(key, c)
+        ns.put(c, key)
+        c
+      } else old.get
+    }
   }
 
-  def global(str: String) = defs(str).svalue
 }
 
 trait TypeCheck {
@@ -156,12 +158,39 @@ trait TypeCheck {
   */
 
   def readback(v: Value, depth: Int = -1): Term = {
+    val nd = depth + 1
+    val ccc = -nd -1
     v match {
+      case sem.Fix(f) =>
+        Fix(Seq(readback(f(Seq(OpenReference(ccc, 0))), nd)))
+      case sem.OpenReference(d, s) =>
+        LocalReference(d + depth + 1, s)
+
       case l@sem.Lambda(size, f) =>
-        val d = depth + 1
-        val ps = (0 until size).map(a => OpenReference(-d-1, a))
-        Lambda((0 until size).map(a => None), readback(l.app(ps)))
-      case
+        val ps = (0 until size).map(a => OpenReference(ccc, a))
+        Lambda((0 until size).map(_ => None), readback(l.app(ps), nd))
+      case sem.Construct(name, value) =>
+        Construct(name, readback(value, depth))
+      case sem.Record(ms, vs) =>
+        Record(ms, vs.map(v => readback(v, depth)))
+
+      case sem.App(left, vs) =>
+        App(readback(left, depth), vs.map(a => readback(a, depth)))
+      case sem.Projection(vv, s) =>
+        Projection(readback(vv, depth), s)
+      case sem.Split(s, names) =>
+        Split(readback(s, depth), names.mapValues(v => readback(v(OpenReference(ccc, 0)),  nd)))
+
+      case sem.Pi(size, inside) =>
+        val ps = (0 until size).map(a => OpenReference(ccc, a))
+        val ts = inside(ps)
+        Pi(ts._1.map(a => readback(a, nd)), readback(ts._2, nd))
+      case sem.Sigma(ms, ts) =>
+        val ps = ms.indices.map(a => OpenReference(ccc, a))
+        Sigma(ms, ts(ps).map(a => readback(a, nd)))
+      case sem.Sum(ts) =>
+        Sum(ts.mapValues(c => readback(c, depth)))
+      case sem.Universe() => Universe()
     }
   }
 
@@ -173,7 +202,7 @@ trait TypeCheck {
     def emitScala(t: Term, depth: Int = -1): String = {
       t match {
         case GlobalReference(str) =>
-          s"sem.global(${sem.register(str)})"
+          s"sem.global(${sem.names.register(str)})"
         case LocalReference(b, s) =>
           // the reason we use a global depth for the big index, is because
           // all free variables is inside the term
@@ -195,23 +224,23 @@ trait TypeCheck {
           s"(${emitScala(left, depth)}).app(${right.map(r => emitScala(r, depth).mkString(", "))})"
         case Pi(vs, body) =>
           val d = depth + 1
-          s"sem.Pi(b$d => (Seq(${vs.map(r => emitScala(r, d).mkString(", "))}), ${emitScala(body, d)})"
+          s"sem.Pi(${vs.size}, b$d => (Seq(${vs.map(r => emitScala(r, d).mkString(", "))}), ${emitScala(body, d)})"
         case Universe() => s"Universe()"
         case Let(vs, body) => ???
         case Record(ms, ts) =>
-          s"sem.Record(Seq(${ms.map(a => sem.register(a, '@')).mkString(", ")}).map(lookup), Seq(${ts.map(a => emitScala(a, depth)).mkString(", ")}))"
+          s"sem.Record(Seq(${ms.map(a => sem.names.register(a, '@')).mkString(", ")}).map(lookup), Seq(${ts.map(a => emitScala(a, depth)).mkString(", ")}))"
         case Sigma(ms, vs) =>
           val d = depth + 1
-          s"sem.Sigma(Seq(${ms.map(a => sem.register(a, '@')).mkString(", ")}).map(lookup), b$d => Seq(${vs.map(r => emitScala(r, d).mkString(", "))}))"
+          s"sem.Sigma(Seq(${ms.map(a => sem.names.register(a, '@')).mkString(", ")}).map(lookup), b$d => Seq(${vs.map(r => emitScala(r, d).mkString(", "))}))"
         case Projection(left, right) =>
-          s"${emitScala(left, depth)}.projection(${sem.register(right, '@')})"
+          s"${emitScala(left, depth)}.projection(${sem.names.register(right, '@')})"
         case Sum(ts) =>
-          s"sem.Sum(Map(${ts.map(p => "lookup(" + sem.register(p._1, '#')+ ") -> " + emitScala(p._2, depth)).mkString(", ")}))"
+          s"sem.Sum(Map(${ts.map(p => "sem.names.lookup(" + sem.names.register(p._1, '#')+ ") -> " + emitScala(p._2, depth)).mkString(", ")}))"
         case Construct(name, t) =>
-          s"sem.Construct(lookup(${sem.register(name, '#')}), ${emitScala(t, depth)})"
+          s"sem.Construct(sem.names.lookup(${sem.names.register(name, '#')}), ${emitScala(t, depth)})"
         case Split(left, right) =>
           val d = depth + 1
-          s"${emitScala(left, depth)}.split(Map(${right.map(p => "lookup(" + sem.register(p._1, '#')+ ") -> (b" + d  + " => " + emitScala(p._2, depth + 1) + ")").mkString(", ")}))"
+          s"${emitScala(left, depth)}.split(Map(${right.map(p => "sem.names.lookup(" + sem.names.register(p._1, '#')+ ") -> (b" + d  + " => " + emitScala(p._2, depth + 1) + ")").mkString(", ")}))"
       }
     }
     val text = emitScala(term, -1)
@@ -228,5 +257,6 @@ object tests extends scala.App with TypeCheck {
   // \(x : type, y: x, z: x) => x
   val test1 = Lambda(Seq(u, r(0, 0), r(0, 0)).map(a => Some(a)), r(0, 0))
   // sem.Lambda(b0 => b0(0))
+  val test
   eval(test1)
 }
