@@ -209,7 +209,7 @@ trait TypeCheck {
           // when reconstructing the term, the depth of binding site is stable when we construct them
           // and when the reference is constructed, the depth of the term is table, and so we can get
           // back the index
-          if (b > depth) s"sem.LocalReference(${b - depth - 1}, $s)"
+          if (b > depth) s"sem.OpenReference(${b - depth - 1}, $s)"
           else s"b${depth - b}($s)"
         case Fix(t) =>
           val d = depth + 1
@@ -318,11 +318,18 @@ object tests extends scala.App with TypeCheck {
   val n7 = Construct("succ", n6)
   val n8 = Construct("succ", n7)
   val n9 = Construct("succ", n8)
+  val n10 = Construct("succ", n9)
+  val n11 = Construct("succ", n10)
+  val n12 = Construct("succ", n11)
+  val n13 = Construct("succ", n12)
+  val n14 = Construct("succ", n13)
+  val n15 = Construct("succ", n14)
+  val n16 = Construct("succ", n15)
 
-  val n0t9 = Seq(n0, n1, n2, n3, n4, n5, n6, n7, n8, n9)
+  val n0t16 = Seq(n0, n1, n2, n3, n4, n5, n6, n7, n8, n9, n10, n11, n12, n13, n14, n15, n16)
   val succ = Lambda(ps(num), Construct("succ", r(0, 0)))
 
-  assert((n0t9 ++ Seq(succ)).forall(a => nbe(a) == tps(a)))
+  assert((n0t16 ++ Seq(succ)).forall(a => nbe(a) == tps(a)))
 
   assert(nbe(a(succ, n1)) == n2)
   assert(nbe(a(succ, n2)) == n3)
@@ -340,14 +347,36 @@ object tests extends scala.App with TypeCheck {
   def mk_pair(seq: Term*) = Record(Seq("_1", "_2"), seq)
   assert(nbe(a(pair, num, num)) == pair_num_num)
 
-  // fix self => (a, b: nat) => split a { case zero => b; case succ k => succ(self a k) }
+  // fix self => (a, b: nat) => split a { case zero => b; case succ k => succ(self k b) }
   val plus = fix(Lambda(ps(num, num), Split(r(0, 0), Map("zero" -> r(1, 1), "succ" -> Construct("succ", a(r(2, 0), r(0, 0), r(1, 1)))))))
+  // fix self => (a, b: nat) => split a { case zero => b; case succ k => succ(self b k) }
+  val plus1 = fix(Lambda(ps(num, num), Split(r(0, 0), Map("zero" -> r(1, 1), "succ" -> Construct("succ", a(r(2, 0), r(1, 1), r(0, 0)))))))
+  // fix self => (b, a: nat) => split a { case zero => b; case succ k => succ(self k b) }
+  val plus2 = fix(Lambda(ps(num, num), Split(r(0, 1), Map("zero" -> r(1, 0), "succ" -> Construct("succ", a(r(2, 0), r(0, 0), r(1, 0)))))))
+  // fix self => (b, a: nat) => split a { case zero => b; case succ k => succ(self b k) }
+  val plus3 = fix(Lambda(ps(num, num), Split(r(0, 1), Map("zero" -> r(1, 0), "succ" -> Construct("succ", a(r(2, 0), r(1, 0), r(0, 0)))))))
   assert(nbe(plus) == tps(plus))
 
-  for (i <- 0 to 9) {
-    for (j <- 0 to 9) {
-      if (i + j <= 9) {
-        assert(nbe(a(plus, n0t9(i), n0t9(j))) == n0t9(i + j))
+  for (i <- 0 to 16) {
+    for (j <- 0 to 16) {
+      if (i + j <= 16) {
+        assert(nbe(a(plus, n0t16(i), n0t16(j))) == n0t16(i + j))
+        assert(nbe(a(plus1, n0t16(i), n0t16(j))) == n0t16(i + j))
+        assert(nbe(a(plus2, n0t16(i), n0t16(j))) == n0t16(i + j))
+        assert(nbe(a(plus3, n0t16(i), n0t16(j))) == n0t16(i + j))
+      }
+    }
+  }
+
+  // fix self => (a, b: nat) => split a { case zero => 0; case succ k => (plus b (self k b) }
+  val mult = fix(Lambda(ps(num, num), Split(r(0, 0), Map("zero" -> n0, "succ" -> a(plus, r(1, 1), a(r(2, 0), r(0, 0), r(1, 1)))))))
+  val mult1 = fix(Lambda(ps(num, num), Split(r(0, 0), Map("zero" -> n0, "succ" -> a(plus, r(1, 1), a(r(2, 0), r(1, 1), r(0, 0)))))))
+
+  for (i <- 0 to 16) {
+    for (j <- 0 to 16) {
+      if (i * j <= 16) {
+        assert(nbe(a(mult, n0t16(i), n0t16(j))) == n0t16(i * j))
+        assert(nbe(a(mult1, n0t16(i), n0t16(j))) == n0t16(i * j))
       }
     }
   }
