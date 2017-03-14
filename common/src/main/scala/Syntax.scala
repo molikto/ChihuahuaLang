@@ -16,6 +16,8 @@ case class GlobalReference(str: String) extends Term
 // go to a binding site you minus your reference by -1 or it is the site if you get 0
 case class LocalReference(big: Int, small: Int) extends Term {
   assert(big >= 0 && small >= 0)
+
+  override def toString = s"r($big, $small)"
 }
 
 
@@ -45,7 +47,7 @@ case class Projection(left: Term, right: String) extends Term
 
 case class Sum(ts: Map[String, Term]) extends Term
 case class Construct(name: String, v: Term) extends Term
-case class Split(left: Term, right: Map[String, Term]) extends Term with BindingSite
+case class Split(left: Term, right: Map[String, Term]) extends Term with BindingSite // the right is binding. not left
 
 
 case class Universe() extends Term

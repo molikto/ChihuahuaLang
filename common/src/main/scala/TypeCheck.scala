@@ -1,4 +1,3 @@
-import UntypedLambdaCalculus.{Abs, App, Var}
 import com.twitter.util.Eval
 import sem.OpenReference
 
@@ -13,33 +12,33 @@ object sem {
   sealed abstract class Value {
     def projection(s: String): Value = throw new Exception()
     def app(seq: Seq[Value]): Value = throw new Exception()
-    def split(bs: Map[String, Value => Value]): Value = throw new Exception()
+    def split(bs: Map[String, Seq[Value] => Value]): Value = throw new Exception()
   }
 
   // these are where stuck state starts
   sealed abstract class Stuck extends Value {
     override def app(seq: Seq[Value]): Value = App(this, seq)
     override def projection(s: String) = Projection(this, s)
-    override def split(bs: Map[String, Value => Value]) = Split(this, bs)
+    override def split(bs: Map[String, Seq[Value] => Value]) = Split(this, bs)
   }
 
   case class Fix(t: Seq[Value] => Value) extends Value {
     override def app(seq: Seq[Value]) = t(Seq(this)).app(seq)
     override def projection(s: String) = t(Seq(this)).projection(s)
-    override def split(bs: Map[String, Value => Value]) = t(Seq(this)).split(bs)
+    override def split(bs: Map[String, Seq[Value] => Value]) = t(Seq(this)).split(bs)
   }
 
   case class OpenReference(depth: Int, small: Int) extends Stuck
   case class Projection(value: Stuck, str: String) extends Stuck
   case class App(atom: Stuck, app: Seq[Value]) extends Stuck
-  case class Split(s: Stuck, names:  Map[String, Value => Value]) extends Stuck
+  case class Split(s: Stuck, names:  Map[String, Seq[Value] => Value]) extends Stuck
 
 
   case class Lambda(size: Int, fun: Seq[Value] => Value) extends Value {
     override def app(seq: Seq[Value]) = fun(seq)
   }
   case class Construct(name: String, apps: Value) extends Value {
-    override def split(bs: Map[String, Value => Value]) = bs(name)(apps)
+    override def split(bs: Map[String, Seq[Value] => Value]) = bs(name)(Seq(apps))
   }
   case class Record(ms: Seq[String], vs: Seq[Value]) extends Value {
     override def projection(s: String) = vs(ms.indexOf(s))
@@ -179,7 +178,7 @@ trait TypeCheck {
       case sem.Projection(vv, s) =>
         Projection(readback(vv, depth), s)
       case sem.Split(s, names) =>
-        Split(readback(s, depth), names.mapValues(v => readback(v(OpenReference(ccc, 0)),  nd)))
+        Split(readback(s, depth), names.mapValues(v => readback(v(Seq(OpenReference(ccc, 0))),  nd)))
 
       case sem.Pi(size, inside) =>
         val ps = (0 until size).map(a => OpenReference(ccc, a))
@@ -211,7 +210,7 @@ trait TypeCheck {
           // and when the reference is constructed, the depth of the term is table, and so we can get
           // back the index
           if (b > depth) s"sem.LocalReference(${b - depth - 1}, $s)"
-          else s"b${b}($s)"
+          else s"b${depth - b}($s)"
         case Fix(t) =>
           val d = depth + 1
           s"sem.Fix(b$d => ${emitScala(t.head, d)})"
@@ -221,17 +220,17 @@ trait TypeCheck {
           val d = depth + 1
           s"sem.Lambda(${is.size}, b$d => ${emitScala(body, d)})"
         case App(left, right) =>
-          s"(${emitScala(left, depth)}).app(${right.map(r => emitScala(r, depth).mkString(", "))})"
+          s"${emitScala(left, depth)}.app(Seq(${right.map(r => emitScala(r, depth)).mkString(", ")}))"
         case Pi(vs, body) =>
           val d = depth + 1
           s"sem.Pi(${vs.size}, b$d => (Seq(${vs.map(r => emitScala(r, d).mkString(", "))}), ${emitScala(body, d)})"
-        case Universe() => s"Universe()"
+        case Universe() => s"sem.Universe()"
         case Let(vs, body) => ???
         case Record(ms, ts) =>
-          s"sem.Record(Seq(${ms.map(a => sem.names.register(a, '@')).mkString(", ")}).map(lookup), Seq(${ts.map(a => emitScala(a, depth)).mkString(", ")}))"
+          s"sem.Record(Seq(${ms.map(a => sem.names.register(a, '@')).mkString(", ")}).map(sem.names.lookup), Seq(${ts.map(a => emitScala(a, depth)).mkString(", ")}))"
         case Sigma(ms, vs) =>
           val d = depth + 1
-          s"sem.Sigma(Seq(${ms.map(a => sem.names.register(a, '@')).mkString(", ")}).map(lookup), b$d => Seq(${vs.map(r => emitScala(r, d).mkString(", "))}))"
+          s"sem.Sigma(Seq(${ms.map(a => sem.names.register(a, '@')).mkString(", ")}).map(sem.names.lookup), b$d => Seq(${vs.map(r => emitScala(r, d)).mkString(", ")}))"
         case Projection(left, right) =>
           s"${emitScala(left, depth)}.projection(${sem.names.register(right, '@')})"
         case Sum(ts) =>
@@ -240,23 +239,116 @@ trait TypeCheck {
           s"sem.Construct(sem.names.lookup(${sem.names.register(name, '#')}), ${emitScala(t, depth)})"
         case Split(left, right) =>
           val d = depth + 1
-          s"${emitScala(left, depth)}.split(Map(${right.map(p => "sem.names.lookup(" + sem.names.register(p._1, '#')+ ") -> (b" + d  + " => " + emitScala(p._2, depth + 1) + ")").mkString(", ")}))"
+          s"${emitScala(left, depth)}.split(Map(${right.map(p => "sem.names.lookup(" + sem.names.register(p._1, '#')+ ") -> (b" + d  + " => " + emitScala(p._2, d) + ")").mkString(", ")}))"
       }
     }
     val text = emitScala(term, -1)
-    println(text)
+    println("\t" + text)
     twitterEval.apply[Value](text)
+  }
+
+  def nbe(t: Term) = {
+    println(t)
+    val e = eval(t)
+    val rb = readback(e)
+    println("\t" + rb)
+    rb
   }
 }
 
 object tests extends scala.App with TypeCheck {
 
   val u = Universe()
-  def r(b: Int, r: Int) = LocalReference(b, r)
+  def r(b: Int, r: Int) = LocalReference(b, r) // reference
+  def pns(i: Int) = (0 until i).map(_ => None) // empty parameters
+  def ps(t: Term*) = t.map(a => Some(a)) // parameters
+  def a(t: Term, ts: Term*) = App(t, ts) // app
+  def tps(t: Term) = t match { // trim parameters
+    case l: Lambda =>
+      l.copy(is = l.is.map(_ => None))
+    case f@Fix(a) => a.head match {
+      case l: Lambda =>
+        Fix(Seq(l.copy(is = l.is.map(_ => None))))
+      case _ => f
+    }
+    case a => a
+  }
+  def pi(ts: Term*) = Pi(ts.dropRight(1), ts.last)
+  def fix(t: Term) = Fix(Seq(t))
 
   // \(x : type, y: x, z: x) => x
-  val test1 = Lambda(Seq(u, r(0, 0), r(0, 0)).map(a => Some(a)), r(0, 0))
-  // sem.Lambda(b0 => b0(0))
-  val test
-  eval(test1)
+  val t1 = Lambda(ps(u, r(0, 0), r(0, 0)), r(0, 0))
+  assert(nbe(t1) == tps(t1))
+
+  // record[]
+  val unit = Sigma(Seq.empty, Seq.empty)
+  assert(nbe(unit) == unit)
+
+  val unit0 = Record(Seq.empty, Seq.empty)
+  assert(nbe(unit0) == unit0)
+
+  // \(a: type, x: a) => x
+  val id = Lambda(ps(u, r(0, 0)), r(0, 1))
+  assert(nbe(id) == tps(id))
+  assert(nbe(a(id, u, unit)) == unit)
+
+  // \(a: type) => (x: a) => x
+  val idc = Lambda(ps(u), Lambda(ps(r(1, 0)), r(0, 0)))
+  assert(nbe(a(id, u, unit)) == nbe(a(a(idc, u), unit)))
+
+  val id_u = Lambda(ps(u), r(0, 0))
+  val app_id_u = Lambda(ps(u), a(id, u, r(0, 0)))
+  assert(nbe(id_u) == nbe(app_id_u))
+
+  // \(x: type, f: x -> x, a: x) => f (f a)
+  val double = Lambda(ps(u, pi(r(1, 0), r(1, 0)), r(0, 0)), a(r(0, 1), a(r(0, 1), r(0, 2))))
+  assert(nbe(double) == tps(double))
+  //assert(a(double, unit, ))
+
+  // fix self => sum(zero: unit, succ: self)
+  val num = fix(Sum(Map("zero" -> unit, "succ" -> r(0, 0))))
+
+  val n0 = Construct("zero", unit0)
+  val n1 = Construct("succ", n0)
+  val n2 = Construct("succ", n1)
+  val n3 = Construct("succ", n2)
+  val n4 = Construct("succ", n3)
+  val n5 = Construct("succ", n4)
+  val n6 = Construct("succ", n5)
+  val n7 = Construct("succ", n6)
+  val n8 = Construct("succ", n7)
+  val n9 = Construct("succ", n8)
+
+  val n0t9 = Seq(n0, n1, n2, n3, n4, n5, n6, n7, n8, n9)
+  val succ = Lambda(ps(num), Construct("succ", r(0, 0)))
+
+  assert((n0t9 ++ Seq(succ)).forall(a => nbe(a) == tps(a)))
+
+  assert(nbe(a(succ, n1)) == n2)
+  assert(nbe(a(succ, n2)) == n3)
+  assert(nbe(a(succ, n3)) == n4)
+  assert(nbe(a(succ, n4)) == n5)
+  assert(nbe(a(succ, n5)) == n6)
+  assert(nbe(a(succ, a(succ, n1))) == n3)
+  assert(nbe(a(succ, a(succ, n2))) == n4)
+  assert(nbe(a(succ, a(succ, n3))) == n5)
+  assert(nbe(a(succ, a(succ, n4))) == n6)
+
+  val pair = Lambda(ps(u, u), Sigma(Seq("_1", "_2"), Seq(r(1, 0), r(1, 1))))
+  val pair_num_num = Sigma(Seq("_1", "_2"), Seq(num, num))
+  assert(nbe(pair) == tps(pair))
+  def mk_pair(seq: Term*) = Record(Seq("_1", "_2"), seq)
+  assert(nbe(a(pair, num, num)) == pair_num_num)
+
+  // fix self => (a, b: nat) => split a { case zero => b; case succ k => succ(self a k) }
+  val plus = fix(Lambda(ps(num, num), Split(r(0, 0), Map("zero" -> r(1, 1), "succ" -> Construct("succ", a(r(2, 0), r(0, 0), r(1, 1)))))))
+  assert(nbe(plus) == tps(plus))
+
+  for (i <- 0 to 9) {
+    for (j <- 0 to 9) {
+      if (i + j <= 9) {
+        assert(nbe(a(plus, n0t9(i), n0t9(j))) == n0t9(i + j))
+      }
+    }
+  }
 }
