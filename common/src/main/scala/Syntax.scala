@@ -44,15 +44,24 @@ case class Let(@BindingSite vs: Seq[Term], body: Term) extends Term
 case class Record(ms: Seq[String], ts: Seq[Term]) extends Term {
   assert(ms.size == ts.size)
 }
+
+// assume we have a acyclic directed graph, each node is labeled with a string, we can normalize it like this:
+// first, list all labels with no dependencies, order them in label order,
+// second list all labels with dependencies of the first batch, order them in label order
+// ...
+// we will always assume that our Sigma type is of this order...
 case class Sigma(ms: Seq[String], @BindingSite ts: Seq[Term]) extends Term {
   assert(ms.size == ts.size)
+  assert(normalized())
+  def normalized(): Boolean = true // TODO
 }
 case class Projection(left: Term, right: String) extends Term
 
 
 case class Sum(ts: Map[String, Term]) extends Term
 case class Construct(name: String, v: Term) extends Term
-case class Split(left: Term, @BindingSite right: Map[String, Term]) extends Term// the right is binding. not left
+case class Split(left: Term, @BindingSite right: Map[String, Term]) extends Term // the right is binding. not left
+
 
 
 case class Universe() extends Term

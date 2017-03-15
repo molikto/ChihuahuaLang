@@ -15,6 +15,7 @@ import scala.collection.mutable
 // but I don't know the sharing of global definitions and runtime etc. is possible
 object sem {
 
+  val Bottom = Sum(Map.empty)
   // these are some normal forms, such that you need to apply to go on?
   // these are normal forms?
   sealed abstract class Value {
@@ -23,6 +24,10 @@ object sem {
         true
       } else {
         (this, o) match {
+          case (_, sem.Bottom) =>
+            false
+          case (sem.Bottom, _) =>
+            true
           case (sem.Universe(), sem.Universe()) =>
             true
           case (sem.Fix(t0), sem.Fix(t1)) =>
@@ -35,7 +40,7 @@ object sem {
             val k = Seq(OpenReference(0, 0))
             a :<: t(k)
           case (sem.Sigma(ms0, ts0), sem.Sigma(ms1, ts1)) => // assuming nat <: integer we have sigma[@a nat, @b type] <: [@a integer]
-            if (ms1.startsWith(ms0)) {
+            if (ms1.startsWith(ms0)) { // TODO advanced subtyping for records
               val ids = ms1.indices.map(i => OpenReference(0, i))
               val tts0 = ts0(ids)
               val tts1 = ts1(ids)
@@ -52,6 +57,7 @@ object sem {
             if ((ts.keySet -- ts1.keySet).isEmpty) {
               ts.forall(pair => pair._2 :<: ts1(pair._1))
             } else false
+          case _ => false
         }
       }
     }
@@ -64,6 +70,10 @@ object sem {
         this
       } else {
         (this, o) match {
+          case (sem.Bottom, _) =>
+            sem.Bottom
+          case (_, sem.Bottom) =>
+            sem.Bottom
           case (sem.Universe(), sem.Universe()) =>
             sem.Universe()
           case (sem.Fix(t0), sem.Fix(t1)) =>
@@ -75,12 +85,35 @@ object sem {
           case (a, sem.Fix(t)) =>
             val k = Seq(OpenReference(0, 0))
             a :/\: t(k)
-          case (sem.Sigma(ms0, ts0), sem.Sigma(ms1, ts1)) => // assuming nat <: integer we have sigma[@a nat, @b type] <: [@a integer]
-            ???
-          case (sem.Pi(size, vs), sem.Pi(size1, vs1)) => // assuming nat <: integer, we have integer => nat :<: nat => integer
-            ???
+
+          case (s0@sem.Sigma(ms0, ts0), s1@sem.Sigma(ms1, ts1)) => // assuming nat <: integer we have sigma[@a nat, @b type] <: [@a integer]
+            if (s0 :<: s1) {
+              s0
+            } else if (s1 :<: s0) {
+              s1
+            } else {
+              Bottom
+            }
+          case (p0@sem.Pi(size, vs), p1@sem.Pi(size1, vs1)) => // assuming nat <: integer, we have integer => nat :<: nat => integer
+            if (size == size1) {
+//              val ids = (0 until size).map(i => OpenReference(0, i))
+//              val tts0 = vs(ids)
+//              val tts1 = vs1(ids)
+//              sem.Pi(size, tts0._1.zip(tts1._1).map(p => p._1 :\/: p._2)
+              if (p0 :<: p1) { // TODO semantics...
+                p0
+              } else if (p1 :<: p0) {
+                p1
+              } else {
+                Bottom
+              }
+            } else {
+              Bottom
+            }
           case (sem.Sum(ts), sem.Sum(ts1)) => // assuming nat <: integer, we have sum[#a nat] <: sum[#a integer, #b type]
-            ???
+            val keys = ts.keySet intersect ts1.keySet
+            sem.Sum(keys.map(a => (a, ts(a) :/\: ts1(a))).toMap)
+          case _ => Bottom
         }
       }
     }
@@ -159,11 +192,29 @@ object sem {
   case class Pi(size: Int, inside: Seq[Value] => (Seq[Value], Value)) extends Value
   case class Sum(ts: Map[String, Value]) extends Value
 
-
   case class Global(svalue: Value, stype: Value)
-  val defs = mutable.Map.empty[String, Global] // defined global variables, and their normal form and type
 
+  val defs = mutable.Map.empty[String, Global] // defined global variables, and their normal form and type
   def global(str: String) = defs(str)
+  def addGlobal(str: String, global: Global) = {
+    if (defs.contains(str)) {
+      throw new Exception("Not allowed, global have same name")
+    } else {
+      defs += str -> global
+    }
+  }
+
+
+  def force(v: Value): Value = {
+    def loop(v: Value): Value = v match {
+      case sem.GlobalReference(str) => sem.global(str).svalue
+      case f@sem.Fix(k) => k(Seq(f))
+      case a => a
+    }
+    var t = loop(v)
+    while (t != v) t = loop(t)
+    t
+  }
 
   object names {
     // names across borders.... the ty currently is a hack
@@ -188,12 +239,9 @@ object sem {
     def emitScala(s: String, ty: Char = ' ') = s"sem.names.lookup(${register(s, ty)})"
   }
 
-
 }
 
 import sem.Value
-
-
 
 trait Normalization extends UtilsCommon {
 
@@ -305,22 +353,13 @@ trait Normalization extends UtilsCommon {
   }
 
 
-  def force(v: Value): Value = {
-    def loop(v: Value): Value = v match {
-      case sem.GlobalReference(str) => sem.global(str).svalue
-      case f@sem.Fix(k) => k(Seq(f))
-      case a => a
-    }
-    var t = loop(v)
-    while (t != v) t = loop(t)
-    t
-  }
 }
 
 
 
 trait TypeCheck extends Normalization {
 
+  import sem.force
 
   def global(g: GlobalReference) = sem.global(g.str)
 
@@ -460,6 +499,22 @@ trait TypeCheck extends Normalization {
             el(t._1).check(body, t._2)
           } else {
             throw new Exception(".. this is not implemented yet")
+          }
+        case (Record(ms, ts), sem.Sigma(ms0, ts0)) =>
+          assert(ms == ms0)
+          val size = ms.size
+          var i = 0
+          var confirmed = Seq.empty[Value]
+          while (i < size) { // check i-th type
+            confirmed ++ (i until size).map(_ => sem.DebugPoison())
+            val applied = ts0(confirmed)
+            val expected = applied(i) // it should NOT contain any new open variables...
+            if (Debug) {
+              readback(expected)
+            }
+            check(ts(i), expected)
+            confirmed = confirmed :+ expected
+            i += 1
           }
         case (e, t) =>
           assert(infer(e, debugCheck = false) :<: t)

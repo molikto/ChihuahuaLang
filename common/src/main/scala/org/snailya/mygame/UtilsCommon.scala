@@ -48,4 +48,5 @@ trait UtilsCommon {
   def static_assert(a: Boolean) = {
     if (Debug) assert(a)
   }
+
 }
