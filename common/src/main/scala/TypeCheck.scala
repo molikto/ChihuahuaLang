@@ -267,7 +267,7 @@ trait TypeCheck extends Normalization {
       def checkLambdaArgs(is: Seq[Option[Term]]): Context = {
         assert(is.forall(a => a.nonEmpty))
         is.map(_.get).foldLeft(el()) { (c, p) =>
-          c.assertIsType(p)
+          c.checkIsType(p)
           c.es(eval(p))
         }
       }
@@ -277,18 +277,18 @@ trait TypeCheck extends Normalization {
         case Fix(t) =>
           t.head match {
             case Ascription(tt, ty) =>
-              assertIsType(ty)
+              checkIsType(ty)
               el().es(eval(ty)).infer(tt)
             case Lambda(is, Ascription(tt, ty)) =>
               val c = checkLambdaArgs(is)
-              c.assertIsType(ty)
+              c.checkIsType(ty)
               val vty = eval(ty)
               c.check(tt, eval(ty))
               eval(Pi(c.head.map(a => readback(a)), readback(vty)))
             case _ => throw new Exception("Cannot infer Fix")
           }
         case Ascription(left, right) =>
-          assertIsType(right)
+          checkIsType(right)
           val r = eval(right)
           check(left, r)
           r
@@ -348,10 +348,10 @@ trait TypeCheck extends Normalization {
         case a: Pi =>
           sem.Universe()
         case a: Sum =>
-          assertIsType(a)
+          checkIsType(a)
           sem.Universe()
         case a: Sigma =>
-          assertIsType(a)
+          checkIsType(a)
           sem.Universe()
         case Universe() =>
           sem.Universe()
@@ -363,19 +363,16 @@ trait TypeCheck extends Normalization {
       res
     }
 
-    def assertIsUniverse(t: Term) = t match {
-      case Universe() => Unit
-      case _ => throw new Exception("Check is universe failed")
-    }
-
-    // no need to go inside check for now
-    def assertIsType(t: Term): Unit = assert(infer(t) :<: sem.Universe())
 
     // this can be considered just a wrapper for infer(term) :<: t
     // only that: it calls force
     // it handles parameter less lambda
     // so ALWAYS call this instead of :<: directly
     // (unless you know what you are doing)
+    // and if you look at the code above,
+    // you can see that the check is basically used by
+    // function application.....
+    // and fix..................
     def check(term: Term, ty: Value): Unit = {
       (term, force(ty)) match {
         case (Lambda(is, body), sem.Pi(size, inside)) =>
@@ -393,6 +390,14 @@ trait TypeCheck extends Normalization {
       }
       delog("Check. Context:\n\t" + ctx.reverse.map(a => a.map(k => readback(k)).mkString(" __ ")).mkString("\n\t") + "\nTerm:\n\t" + term + "\nType:\n\t" + readback(ty))
     }
+
+    def checkIsUniverse(t: Term) = t match {
+      case Universe() => Unit
+      case _ => throw new Exception("Check is universe failed")
+    }
+
+    // no need to go inside check for now
+    def checkIsType(t: Term): Unit = assert(infer(t) :<: sem.Universe())
   }
 
   object Context {
