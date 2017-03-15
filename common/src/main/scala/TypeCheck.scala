@@ -309,9 +309,10 @@ trait Normalization extends UtilsCommon {
     def loop(v: Value): Value = v match {
       case sem.GlobalReference(str) => sem.global(str).svalue
       case f@sem.Fix(k) => k(Seq(f))
+      case a => a
     }
-    var t = v
-    while (t == v) t = loop(t)
+    var t = loop(v)
+    while (t != v) t = loop(t)
     t
   }
 }
@@ -461,7 +462,7 @@ trait TypeCheck extends Normalization {
             throw new Exception(".. this is not implemented yet")
           }
         case (e, t) =>
-          assert(infer(e) :<: t)
+          assert(infer(e, debugCheck = false) :<: t)
       }
       delog("Check. Context:\n\t" + ctx.reverse.map(a => a.map(k => readback(k)).mkString(" __ ")).mkString("\n\t") + "\nTerm:\n\t" + term + "\nType:\n\t" + readback(ty))
     }
@@ -544,7 +545,7 @@ object tests extends scala.App with TypeCheck {
 
   assert(readback(Context.Empty.infer(idc)) == type_idc)
 
-  abort()
+  //abort()
 
   val id_u = Lambda(ps(u), r(0, 0))
   val app_id_u = Lambda(ps(u), a(id, u, r(0, 0)))
