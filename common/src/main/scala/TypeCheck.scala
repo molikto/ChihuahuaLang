@@ -1,4 +1,5 @@
 import com.twitter.util.Eval
+import org.snailya.mygame.UtilsCommon
 import sem.OpenReference
 
 import scala.collection.mutable
@@ -7,6 +8,11 @@ import scala.collection.mutable
 
 // the semantic world, it is not a trait but a object because it is easier to dynamic
 // link the JIT'ed code now
+//
+// I know Coq's native_compute will compile to OCaml
+// https://github.com/coq/coq/blob/d02c9c566c58e566a1453827038f2b49b695c0a5/kernel/nativelib.ml#L78
+// https://github.com/coq/coq/blob/trunk/kernel/nativecode.ml#L1597
+// but I don't know the sharing of global definitions and runtime etc. is possible
 object sem {
 
   // these are some normal forms, such that you need to apply to go on?
@@ -16,6 +22,9 @@ object sem {
     def app(seq: Seq[Value]): Value = throw new Exception()
     def split(bs: Map[String, Seq[Value] => Value]): Value = throw new Exception()
   }
+
+
+  case class DebugPoison() extends Value
 
   // these are where stuck state starts
   sealed abstract class Stuck extends Value {
@@ -35,9 +44,9 @@ object sem {
   // this also means that global reference is NOT reduced inside lambda
   // so it plays a role in syntax equality
   case class GlobalReference(name: String) extends Value {
-    override def app(seq: Seq[Value]) = global(name).app(seq)
-    override def projection(s: String) = global(name).projection(s)
-    override def split(bs: Map[String, Seq[Value] => Value]) = global(name).split(bs)
+    override def app(seq: Seq[Value]) = global(name).svalue.app(seq)
+    override def projection(s: String) = global(name).svalue.projection(s)
+    override def split(bs: Map[String, Seq[Value] => Value]) = global(name).svalue.split(bs)
   }
 
   case class OpenReference(depth: Int, small: Int) extends Stuck
@@ -68,7 +77,7 @@ object sem {
   case class Global(svalue: Value, stype: Value)
   val defs = mutable.Map.empty[String, Global] // defined global variables, and their normal form and type
 
-  def global(str: String) = defs(str).svalue
+  def global(str: String) = defs(str)
 
   object names {
     // names across borders.... the ty currently is a hack
@@ -78,7 +87,7 @@ object sem {
     var counter = 0
 
     def lookup(n: Int): String = ns(n).substring(1)
-    private def register(s: String, ty: Char = ' '): Int = {
+    def register(s: String, ty: Char = ' '): Int = {
       val key = ty + s
       val old = _ns.get(key)
       if (old.isEmpty) {
@@ -100,7 +109,7 @@ import sem.Value
 
 
 
-trait Normalization {
+trait Normalization extends UtilsCommon {
 
   def readback(v: Value, depth: Int = -1): Term = {
     val nd = depth + 1
@@ -138,15 +147,16 @@ trait Normalization {
       case sem.Sum(ts) =>
         Sum(ts.mapValues(c => readback(c, depth)))
       case sem.Universe() => Universe()
+      case sem.DebugPoison() => throw new Exception("I am poisoned!")
     }
   }
 
   val twitterEval = new Eval()
 
   // needs to ensure term is well typed first!
-  def eval(term: Term): Value = {
+  def eval(term: Term, debugText: Boolean = false): Value = {
     if (term == Universe()) sem.Universe()
-    def emitScala(t: Term, depth: Int = -1): String = {
+    def emitScala(t: Term, depth: Int): String = {
       t match {
         case GlobalReference(str) =>
           s"sem.GlobalReference(${sem.names.emitScala(str)})"
@@ -162,7 +172,7 @@ trait Normalization {
         case Fix(t) =>
           val d = depth + 1
           s"sem.Fix(b$d => ${emitScala(t.head, d)})"
-        case Ascription(left, right) => ???
+        case Ascription(left, right) =>
           emitScala(left, depth)
         case Lambda(is, body) =>
           val d = depth + 1
@@ -171,7 +181,7 @@ trait Normalization {
           s"${emitScala(left, depth)}.app(Seq(${right.map(r => emitScala(r, depth)).mkString(", ")}))"
         case Pi(vs, body) =>
           val d = depth + 1
-          s"sem.Pi(${vs.size}, b$d => (Seq(${vs.map(r => emitScala(r, d).mkString(", "))}), ${emitScala(body, d)})"
+          s"sem.Pi(${vs.size}, b$d => (Seq(${vs.map(r => emitScala(r, d)).mkString(", ")}), ${emitScala(body, d)}))"
         case Universe() => s"sem.Universe()"
         case Let(vs, body) => ???
         case Record(ms, ts) =>
@@ -191,15 +201,16 @@ trait Normalization {
       }
     }
     val text = emitScala(term, -1)
-    println("\t" + text)
+    if (debugText) delog("\t" + text)
     twitterEval.apply[Value](text)
   }
 
+
   def nbe(t: Term) = {
-    println(t)
-    val e = eval(t)
+    delog("NbE: " + t)
+    val e = eval(t, debugText = true)
     val rb = readback(e)
-    println("\t" + rb)
+    delog("\t" + rb)
     rb
   }
 }
@@ -209,61 +220,113 @@ trait Normalization {
 trait TypeCheck extends Normalization {
 
 
-  def global(g: GlobalReference): Value = sem.global(g.str)
+  def global(g: GlobalReference) = sem.global(g.str)
 
+  // local typing context
+  // the context is so that the head is index 0
   case class Ctx(ctx: Seq[Seq[Value]]) {
+
+    def head = ctx.head
+    // new index
     def el() = this.copy(ctx = Seq.empty +: ctx)
 
+    // new small index
     def es(v: Value) = this.copy(ctx = (ctx.head :+ v) +: ctx.tail)
 
     def local(l: LocalReference): Value = ctx(l.big)(l.small)
 
+    // return the type of a term in semantics world
     def infer(term: Term): Value = {
-      term match {
-        case g: GlobalReference => global(g)
+      val res = term match {
+        case g: GlobalReference => global(g).stype
         case l: LocalReference => local(l)
         case Fix(t) =>
-          t match {
-            case Ascription(a, b) =>
-            case Lambda(is, Ascription(l, r)) =>
+          t.head match {
+            case Ascription(a, b) => ???
+            case Lambda(is, Ascription(l, r)) => ???
+            case _ => throw new Exception("Cannot infer Fix")
           }
         case Ascription(left, right) =>
           checkIsType(right)
           val r = eval(right)
           check(left, r)
           r
+
         case Lambda(is, body) =>
           assert(is.forall(a => a.nonEmpty))
-          is.map(_.get).foldLeft(el()) { (c, p) =>
+          val c = is.map(_.get).foldLeft(el()) { (c, p) =>
             c.checkIsType(p)
-            eval(p)
+            c.es(eval(p))
           }
-        case Pi(is, body) =>
+          val v = c.infer(body)
+          // the readback might contains sem.OpenReference,
+          // but after we eval with a Pi
+          // it can happens that the binding will rebind inside the eval
+          eval(Pi(c.head.map(a => readback(a)), readback(v)))
         case App(l, rs) =>
-          readback(infer(l)) match {
-            case Pi(is, body) =>
-              assert(rs.size == is.size)
-              rs.zip(is).foldLeft(el()) { (c, p) =>
-                val k = eval(p._2)
-                c.check(p._1, k)
-
+          infer(l) match {
+            case sem.Pi(size, inside) =>
+              var i = 0
+              var confirmed = Seq.empty[Value]
+              while (i < size) { // check i-th type
+                confirmed ++ (i until size).map(_ => sem.DebugPoison())
+                val applied = inside(confirmed)
+                val expected = applied._1(i) // it should NOT contain any new open variables...
+                if (Debug) {
+                  readback(expected)
+                }
+                check(rs(i), expected)
+                confirmed = confirmed :+ expected
+                i += 1
               }
+              inside(confirmed)._2
+            case _ => throw new Exception("Cannot infer App")
           }
-        case Record(ms, ts) =>
-        case Sigma()
-        case Projection()
+        case Let(vs, body) => ???
+
+        case Record(ms, ts) => ???
+        case Projection(left, right) =>
+          infer(left) match {
+            case sem.Sigma(ms, ts) => // the thing is this type MUST be concrete
+              val index = ms.indexOf(right)
+              val res = ts(ms.indices.map(_ => sem.DebugPoison()))
+              if (Debug) {
+                // because we give them poison, their is no way we will read back it
+                res.foreach(a => readback(a))
+              }
+              res(index)
+            case _ => throw new Exception("Cannot infer Projection")
+          }
+        case Construct(name, v) =>
+          sem.Sum(Map(name -> infer(v)))
+        case Split(left, right) => ???
+        case a: Pi =>
+          checkIsType(a)
+          sem.Universe()
+        case a: Sum =>
+          checkIsType(a)
+          sem.Universe()
+        case a: Sigma =>
+          checkIsType(a)
+          sem.Universe()
         case Universe() =>
           sem.Universe()
       }
+      delog("Infer. Context:\n\t" + ctx.reverse.map(a => a.map(k => readback(k)).mkString(" __ ")).mkString("\n\t") + "\nTerm:\n\t" + term + "\nType:\n\t" + readback(res))
+      res
     }
 
+    def checkIsUniverse(t: Term) = t match {
+      case Universe() => Unit
+      case _ => throw new Exception("Check is universe failed")
+    }
 
     def checkIsType(t: Term): Unit = {
-      null
+      ???
     }
 
     def check(term: Term, ty: Value): Unit = {
-
+      ???
     }
   }
 
@@ -274,9 +337,10 @@ trait TypeCheck extends Normalization {
   def check(f: Module): Unit = {
     f.ds.foreach(d => {
       val ty = Ctx.Empty.infer(d._2)
-      defs += (d._1 -> (eval(d._2), ty))
+      sem.defs += (d._1 -> sem.Global(eval(d._2), ty))
     })
   }
+
 
 
 }
@@ -288,6 +352,8 @@ object tests extends scala.App with TypeCheck {
   def pns(i: Int) = (0 until i).map(_ => None) // empty parameters
   def ps(t: Term*) = t.map(a => Some(a)) // parameters
   def a(t: Term, ts: Term*) = App(t, ts) // app
+  def pi(t: Term*) = Pi(t.dropRight(1), t.last)
+  def lam(t: Term*) = Lambda(ps(t.dropRight(1): _*), t.last)
   def tps(t: Term) = t match { // trim parameters
     case l: Lambda =>
       l.copy(is = l.is.map(_ => None))
@@ -298,11 +364,11 @@ object tests extends scala.App with TypeCheck {
     }
     case a => a
   }
-  def pi(ts: Term*) = Pi(ts.dropRight(1), ts.last)
   def fix(t: Term) = Fix(Seq(t))
+  def abort() = if (2 + 1 == 3) throw new Exception("Abort mission!")
 
   // \(x : type, y: x, z: x) => x
-  val t1 = Lambda(ps(u, r(0, 0), r(0, 0)), r(0, 0))
+  val t1 = lam(u, r(0, 0), r(0, 0), r(0, 0))
   assert(nbe(t1) == tps(t1))
 
   // record[]
@@ -313,13 +379,27 @@ object tests extends scala.App with TypeCheck {
   assert(nbe(unit0) == unit0)
 
   // \(a: type, x: a) => x
-  val id = Lambda(ps(u, r(0, 0)), r(0, 1))
+  val id = lam(u, r(0, 0), r(0, 1))
   assert(nbe(id) == tps(id))
   assert(nbe(a(id, u, unit)) == unit)
 
+
+  val type_id = pi(u, r(0, 0), r(0, 0))
+  assert(nbe(type_id) == type_id)
+
+  assert(readback(Ctx.Empty.infer(id)) == type_id)
+
+
   // \(a: type) => (x: a) => x
-  val idc = Lambda(ps(u), Lambda(ps(r(1, 0)), r(0, 0)))
+  val idc = lam(u, lam(r(1, 0), r(0, 0)))
   assert(nbe(a(id, u, unit)) == nbe(a(a(idc, u), unit)))
+
+  val type_idc = pi(u, pi(r(1, 0), r(1, 0)))
+  assert(nbe(type_idc) == type_idc)
+
+  assert(readback(Ctx.Empty.infer(idc)) == type_idc)
+
+  abort()
 
   val id_u = Lambda(ps(u), r(0, 0))
   val app_id_u = Lambda(ps(u), a(id, u, r(0, 0)))
@@ -405,4 +485,5 @@ object tests extends scala.App with TypeCheck {
       }
     }
   }
+
 }

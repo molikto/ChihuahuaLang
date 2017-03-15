@@ -22,10 +22,12 @@ trait UtilsCommon {
   }
 
   def delog(s: => Object) = {
-    try {
-      println(System.currentTimeMillis() + ": " + s)
-    } catch {
-      case _: Throwable =>
+    if (Debug) {
+      try {
+        println(s)
+      } catch {
+        case _: Throwable =>
+      }
     }
   }
 
