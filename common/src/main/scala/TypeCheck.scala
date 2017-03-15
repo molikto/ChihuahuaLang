@@ -18,9 +18,20 @@ object sem {
   // these are some normal forms, such that you need to apply to go on?
   // these are normal forms?
   sealed abstract class Value {
+    def :<:(o: Value): Boolean = {
+    }
     def projection(s: String): Value = throw new Exception()
     def app(seq: Seq[Value]): Value = throw new Exception()
     def split(bs: Map[String, Seq[Value] => Value]): Value = throw new Exception()
+  }
+
+
+
+  def joint(seq: Seq[Value]): Value = {
+
+  }
+  def meet(seq: Seq[Value]): Value = {
+
   }
 
 
@@ -122,7 +133,7 @@ trait Normalization extends UtilsCommon {
       case sem.OpenReference(d, s) =>
         LocalReference(d + depth + 1, s)
 
-      case l@sem.Lambda(size, f) =>
+      case l@sem.Lambda(size, _) =>
         val ps = (0 until size).map(a => OpenReference(ccc, a))
         Lambda((0 until size).map(_ => None), readback(l.app(ps), nd))
       case sem.Construct(name, value) =>
@@ -155,7 +166,6 @@ trait Normalization extends UtilsCommon {
 
   // needs to ensure term is well typed first!
   def eval(term: Term, debugText: Boolean = false): Value = {
-    if (term == Universe()) sem.Universe()
     def emitScala(t: Term, depth: Int): String = {
       t match {
         case GlobalReference(str) =>
@@ -200,9 +210,14 @@ trait Normalization extends UtilsCommon {
           s"${emitScala(left, depth)}.split(Map(${right.map(p => sem.names.emitScala(p._1, '#') + " -> (b" + d  + " => " + emitScala(p._2, d) + ")").mkString(", ")}))"
       }
     }
-    val text = emitScala(term, -1)
-    if (debugText) delog("\t" + text)
-    twitterEval.apply[Value](text)
+    term match {
+      case Universe() => sem.Universe()
+      case GlobalReference(str) => sem.GlobalReference(str)
+      case _ =>
+        val text = emitScala(term, -1)
+        if (debugText) delog("\t" + text)
+        twitterEval.apply[Value](text)
+    }
   }
 
 
@@ -212,6 +227,17 @@ trait Normalization extends UtilsCommon {
     val rb = readback(e)
     delog("\t" + rb)
     rb
+  }
+
+
+  def force(v: Value): Value = {
+    def loop(v: Value): Value = v match {
+      case sem.GlobalReference(str) => sem.global(str).svalue
+      case f@sem.Fix(k) => k(Seq(f))
+    }
+    var t = v
+    while (t == v) t = loop(t)
+    t
   }
 }
 
@@ -230,41 +256,52 @@ trait TypeCheck extends Normalization {
     // new index
     def el() = this.copy(ctx = Seq.empty +: ctx)
 
+    def el(s: Seq[Value]) = this.copy(ctx = s +: ctx)
+
     // new small index
     def es(v: Value) = this.copy(ctx = (ctx.head :+ v) +: ctx.tail)
 
     def local(l: LocalReference): Value = ctx(l.big)(l.small)
-
     // return the type of a term in semantics world
-    def infer(term: Term): Value = {
+    def infer(term: Term, debugCheck: Boolean = true): Value = {
+      def checkLambdaArgs(is: Seq[Option[Term]]): Context = {
+        assert(is.forall(a => a.nonEmpty))
+        is.map(_.get).foldLeft(el()) { (c, p) =>
+          c.assertIsType(p)
+          c.es(eval(p))
+        }
+      }
       val res = term match {
         case g: GlobalReference => global(g).stype
         case l: LocalReference => local(l)
         case Fix(t) =>
           t.head match {
-            case Ascription(a, b) => ???
-            case Lambda(is, Ascription(l, r)) => ???
+            case Ascription(tt, ty) =>
+              assertIsType(ty)
+              el().es(eval(ty)).infer(tt)
+            case Lambda(is, Ascription(tt, ty)) =>
+              val c = checkLambdaArgs(is)
+              c.assertIsType(ty)
+              val vty = eval(ty)
+              c.check(tt, eval(ty))
+              eval(Pi(c.head.map(a => readback(a)), readback(vty)))
             case _ => throw new Exception("Cannot infer Fix")
           }
         case Ascription(left, right) =>
-          checkIsType(right)
+          assertIsType(right)
           val r = eval(right)
           check(left, r)
           r
 
         case Lambda(is, body) =>
-          assert(is.forall(a => a.nonEmpty))
-          val c = is.map(_.get).foldLeft(el()) { (c, p) =>
-            c.checkIsType(p)
-            c.es(eval(p))
-          }
+          val c = checkLambdaArgs(is)
           val v = c.infer(body)
           // the readback might contains sem.OpenReference,
           // but after we eval with a Pi
           // it can happens that the binding will rebind inside the eval
           eval(Pi(c.head.map(a => readback(a)), readback(v)))
         case App(l, rs) =>
-          infer(l) match {
+          force(infer(l)) match {
             case sem.Pi(size, inside) =>
               var i = 0
               var confirmed = Seq.empty[Value]
@@ -284,49 +321,77 @@ trait TypeCheck extends Normalization {
           }
         case Let(vs, body) => ???
 
-        case Record(ms, ts) => ???
+        case Record(ms, ts) =>
+          val vs = ts.map(a => infer(a))
+          sem.Sigma(ms, _ => vs)
         case Projection(left, right) =>
-          infer(left) match {
+          force(infer(left)) match {
             case sem.Sigma(ms, ts) => // the thing is this type MUST be concrete
               val index = ms.indexOf(right)
-              val res = ts(ms.indices.map(_ => sem.DebugPoison()))
-              if (Debug) {
-                // because we give them poison, their is no way we will read back it
-                res.foreach(a => readback(a))
-              }
+              val res = ts(ms.map(a => eval(Projection(left, a))))
               res(index)
             case _ => throw new Exception("Cannot infer Projection")
           }
         case Construct(name, v) =>
           sem.Sum(Map(name -> infer(v)))
-        case Split(left, right) => ???
+        case Split(left, right) =>
+          force(infer(left)) match {
+            case sem.Sum(ts) => // right is bigger
+              assert((ts.keySet -- right.keySet).isEmpty)
+              sem.meet(ts.toSeq.map(a => {
+                val at = a._2
+                val term = right(a._1)
+                el().es(at).infer(term)
+              }))
+            case _ => throw new Exception("Cannot infer Split")
+          }
         case a: Pi =>
-          checkIsType(a)
           sem.Universe()
         case a: Sum =>
-          checkIsType(a)
+          assertIsType(a)
           sem.Universe()
         case a: Sigma =>
-          checkIsType(a)
+          assertIsType(a)
           sem.Universe()
         case Universe() =>
           sem.Universe()
       }
       delog("Infer. Context:\n\t" + ctx.reverse.map(a => a.map(k => readback(k)).mkString(" __ ")).mkString("\n\t") + "\nTerm:\n\t" + term + "\nType:\n\t" + readback(res))
+      if (debugCheck && Debug) {
+        check(term, res)
+      }
       res
     }
 
-    def checkIsUniverse(t: Term) = t match {
+    def assertIsUniverse(t: Term) = t match {
       case Universe() => Unit
       case _ => throw new Exception("Check is universe failed")
     }
 
-    def checkIsType(t: Term): Unit = {
-      ???
-    }
+    // no need to go inside check for now
+    def assertIsType(t: Term): Unit = assert(infer(t) :<: sem.Universe())
 
+    // this can be considered just a wrapper for infer(term) :<: t
+    // only that: it calls force
+    // it handles parameter less lambda
+    // so ALWAYS call this instead of :<: directly
+    // (unless you know what you are doing)
     def check(term: Term, ty: Value): Unit = {
-      ???
+      (term, force(ty)) match {
+        case (Lambda(is, body), sem.Pi(size, inside)) =>
+          assert(size == is.size)
+          if (is.forall(_.nonEmpty)) {
+            assert(infer(term, debugCheck = false) :<: ty)
+          } else if (is.forall(_.isEmpty)) {
+            val t = inside(is.indices.map(a => OpenReference(0, a)))
+            el(t._1).check(body, t._2)
+          } else {
+            throw new Exception(".. this is not implemented yet")
+          }
+        case (e, t) =>
+          assert(infer(e) :<: t)
+      }
+      delog("Check. Context:\n\t" + ctx.reverse.map(a => a.map(k => readback(k)).mkString(" __ ")).mkString("\n\t") + "\nTerm:\n\t" + term + "\nType:\n\t" + readback(ty))
     }
   }
 

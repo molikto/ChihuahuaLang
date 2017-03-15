@@ -31,7 +31,7 @@ case class Fix(@BindingSite t: Seq[Term]) extends Term {
   assert(t.size == 1)
 }
 
-case class Ascription(left: Term, right: Term) extends Term
+case class Ascription(term: Term, ty: Term) extends Term
 
 
 case class Lambda(@BindingSite is: Seq[Option[Term]], body: Term) extends Term
