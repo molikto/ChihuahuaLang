@@ -5,6 +5,8 @@ import scala.collection.mutable
 
 
 
+// the semantic world, it is not a trait but a object because it is easier to dynamic
+// link the JIT'ed code now
 object sem {
 
   // these are some normal forms, such that you need to apply to go on?
@@ -26,6 +28,16 @@ object sem {
     override def app(seq: Seq[Value]) = t(Seq(this)).app(seq)
     override def projection(s: String) = t(Seq(this)).projection(s)
     override def split(bs: Map[String, Seq[Value] => Value]) = t(Seq(this)).split(bs)
+  }
+
+  // global reference is kind of like fix, they are "wrapped" so that we don't expand all things
+  // referenced by it when reading back
+  // this also means that global reference is NOT reduced inside lambda
+  // so it plays a role in syntax equality
+  case class GlobalReference(name: String) extends Value {
+    override def app(seq: Seq[Value]) = global(name).app(seq)
+    override def projection(s: String) = global(name).projection(s)
+    override def split(bs: Map[String, Seq[Value] => Value]) = global(name).split(bs)
   }
 
   case class OpenReference(depth: Int, small: Int) extends Stuck
@@ -53,7 +65,7 @@ object sem {
   case class Sum(ts: Map[String, Value]) extends Value
 
 
-  case class Global(svalue: Value, stype: Value, term: Term)
+  case class Global(svalue: Value, stype: Value)
   val defs = mutable.Map.empty[String, Global] // defined global variables, and their normal form and type
 
   def global(str: String) = defs(str).svalue
@@ -66,7 +78,7 @@ object sem {
     var counter = 0
 
     def lookup(n: Int): String = ns(n).substring(1)
-    def register(s: String, ty: Char = ' '): Int = {
+    private def register(s: String, ty: Char = ' '): Int = {
       val key = ty + s
       val old = _ns.get(key)
       if (old.isEmpty) {
@@ -77,19 +89,131 @@ object sem {
         c
       } else old.get
     }
+
+    def emitScala(s: String, ty: Char = ' ') = s"sem.names.lookup(${register(s, ty)})"
   }
+
 
 }
 
-trait TypeCheck {
+import sem.Value
 
-  import sem.Value
+
+
+trait Normalization {
+
+  def readback(v: Value, depth: Int = -1): Term = {
+    val nd = depth + 1
+    val ccc = -nd - 1
+    v match {
+      case sem.GlobalReference(n) =>
+        GlobalReference(n)
+      case sem.Fix(f) =>
+        Fix(Seq(readback(f(Seq(OpenReference(ccc, 0))), nd)))
+      case sem.OpenReference(d, s) =>
+        LocalReference(d + depth + 1, s)
+
+      case l@sem.Lambda(size, f) =>
+        val ps = (0 until size).map(a => OpenReference(ccc, a))
+        Lambda((0 until size).map(_ => None), readback(l.app(ps), nd))
+      case sem.Construct(name, value) =>
+        Construct(name, readback(value, depth))
+      case sem.Record(ms, vs) =>
+        Record(ms, vs.map(v => readback(v, depth)))
+
+      case sem.App(left, vs) =>
+        App(readback(left, depth), vs.map(a => readback(a, depth)))
+      case sem.Projection(vv, s) =>
+        Projection(readback(vv, depth), s)
+      case sem.Split(s, names) =>
+        Split(readback(s, depth), names.mapValues(v => readback(v(Seq(OpenReference(ccc, 0))), nd)))
+
+      case sem.Pi(size, inside) =>
+        val ps = (0 until size).map(a => OpenReference(ccc, a))
+        val ts = inside(ps)
+        Pi(ts._1.map(a => readback(a, nd)), readback(ts._2, nd))
+      case sem.Sigma(ms, ts) =>
+        val ps = ms.indices.map(a => OpenReference(ccc, a))
+        Sigma(ms, ts(ps).map(a => readback(a, nd)))
+      case sem.Sum(ts) =>
+        Sum(ts.mapValues(c => readback(c, depth)))
+      case sem.Universe() => Universe()
+    }
+  }
+
+  val twitterEval = new Eval()
+
+  // needs to ensure term is well typed first!
+  def eval(term: Term): Value = {
+    if (term == Universe()) sem.Universe()
+    def emitScala(t: Term, depth: Int = -1): String = {
+      t match {
+        case GlobalReference(str) =>
+          s"sem.GlobalReference(${sem.names.emitScala(str)})"
+        case LocalReference(b, s) =>
+          // the reason we use a global depth for the big index, is because
+          // all free variables is inside the term
+          // and all our structural recursive read back function ensures us
+          // when reconstructing the term, the depth of binding site is stable when we construct them
+          // and when the reference is constructed, the depth of the term is table, and so we can get
+          // back the index
+          if (b > depth) s"sem.OpenReference(${b - depth - 1}, $s)"
+          else s"b${depth - b}($s)"
+        case Fix(t) =>
+          val d = depth + 1
+          s"sem.Fix(b$d => ${emitScala(t.head, d)})"
+        case Ascription(left, right) => ???
+          emitScala(left, depth)
+        case Lambda(is, body) =>
+          val d = depth + 1
+          s"sem.Lambda(${is.size}, b$d => ${emitScala(body, d)})"
+        case App(left, right) =>
+          s"${emitScala(left, depth)}.app(Seq(${right.map(r => emitScala(r, depth)).mkString(", ")}))"
+        case Pi(vs, body) =>
+          val d = depth + 1
+          s"sem.Pi(${vs.size}, b$d => (Seq(${vs.map(r => emitScala(r, d).mkString(", "))}), ${emitScala(body, d)})"
+        case Universe() => s"sem.Universe()"
+        case Let(vs, body) => ???
+        case Record(ms, ts) =>
+          s"sem.Record(Seq(${ms.map(a => sem.names.emitScala(a, '@')).mkString(", ")}), Seq(${ts.map(a => emitScala(a, depth)).mkString(", ")}))"
+        case Sigma(ms, vs) =>
+          val d = depth + 1
+          s"sem.Sigma(Seq(${ms.map(a => sem.names.emitScala(a, '@')).mkString(", ")}), b$d => Seq(${vs.map(r => emitScala(r, d)).mkString(", ")}))"
+        case Projection(left, right) =>
+          s"${emitScala(left, depth)}.projection(${sem.names.emitScala(right, '@')})"
+        case Sum(ts) =>
+          s"sem.Sum(Map(${ts.map(p =>  sem.names.emitScala(p._1, '#') + " -> " + emitScala(p._2, depth)).mkString(", ")}))"
+        case Construct(name, t) =>
+          s"sem.Construct(${sem.names.emitScala(name, '#')}, ${emitScala(t, depth)})"
+        case Split(left, right) =>
+          val d = depth + 1
+          s"${emitScala(left, depth)}.split(Map(${right.map(p => sem.names.emitScala(p._1, '#') + " -> (b" + d  + " => " + emitScala(p._2, d) + ")").mkString(", ")}))"
+      }
+    }
+    val text = emitScala(term, -1)
+    println("\t" + text)
+    twitterEval.apply[Value](text)
+  }
+
+  def nbe(t: Term) = {
+    println(t)
+    val e = eval(t)
+    val rb = readback(e)
+    println("\t" + rb)
+    rb
+  }
+}
+
+
+
+trait TypeCheck extends Normalization {
+
 
   def global(g: GlobalReference): Value = sem.global(g.str)
 
-  /*
   case class Ctx(ctx: Seq[Seq[Value]]) {
     def el() = this.copy(ctx = Seq.empty +: ctx)
+
     def es(v: Value) = this.copy(ctx = (ctx.head :+ v) +: ctx.tail)
 
     def local(l: LocalReference): Value = ctx(l.big)(l.small)
@@ -97,7 +221,7 @@ trait TypeCheck {
     def infer(term: Term): Value = {
       term match {
         case g: GlobalReference => global(g)
-        case l:LocalReference => local(l)
+        case l: LocalReference => local(l)
         case Fix(t) =>
           t match {
             case Ascription(a, b) =>
@@ -154,106 +278,7 @@ trait TypeCheck {
     })
   }
 
-  */
 
-  def readback(v: Value, depth: Int = -1): Term = {
-    val nd = depth + 1
-    val ccc = -nd -1
-    v match {
-      case sem.Fix(f) =>
-        Fix(Seq(readback(f(Seq(OpenReference(ccc, 0))), nd)))
-      case sem.OpenReference(d, s) =>
-        LocalReference(d + depth + 1, s)
-
-      case l@sem.Lambda(size, f) =>
-        val ps = (0 until size).map(a => OpenReference(ccc, a))
-        Lambda((0 until size).map(_ => None), readback(l.app(ps), nd))
-      case sem.Construct(name, value) =>
-        Construct(name, readback(value, depth))
-      case sem.Record(ms, vs) =>
-        Record(ms, vs.map(v => readback(v, depth)))
-
-      case sem.App(left, vs) =>
-        App(readback(left, depth), vs.map(a => readback(a, depth)))
-      case sem.Projection(vv, s) =>
-        Projection(readback(vv, depth), s)
-      case sem.Split(s, names) =>
-        Split(readback(s, depth), names.mapValues(v => readback(v(Seq(OpenReference(ccc, 0))),  nd)))
-
-      case sem.Pi(size, inside) =>
-        val ps = (0 until size).map(a => OpenReference(ccc, a))
-        val ts = inside(ps)
-        Pi(ts._1.map(a => readback(a, nd)), readback(ts._2, nd))
-      case sem.Sigma(ms, ts) =>
-        val ps = ms.indices.map(a => OpenReference(ccc, a))
-        Sigma(ms, ts(ps).map(a => readback(a, nd)))
-      case sem.Sum(ts) =>
-        Sum(ts.mapValues(c => readback(c, depth)))
-      case sem.Universe() => Universe()
-    }
-  }
-
-  val twitterEval = new Eval()
-
-  // needs to ensure term is well typed first!
-  def eval(term: Term): Value = {
-    if (term == Universe()) sem.Universe()
-    def emitScala(t: Term, depth: Int = -1): String = {
-      t match {
-        case GlobalReference(str) =>
-          s"sem.global(${sem.names.register(str)})"
-        case LocalReference(b, s) =>
-          // the reason we use a global depth for the big index, is because
-          // all free variables is inside the term
-          // and all our structural recursive read back function ensures us
-          // when reconstructing the term, the depth of binding site is stable when we construct them
-          // and when the reference is constructed, the depth of the term is table, and so we can get
-          // back the index
-          if (b > depth) s"sem.OpenReference(${b - depth - 1}, $s)"
-          else s"b${depth - b}($s)"
-        case Fix(t) =>
-          val d = depth + 1
-          s"sem.Fix(b$d => ${emitScala(t.head, d)})"
-        case Ascription(left, right) => ???
-          emitScala(left, depth)
-        case Lambda(is, body) =>
-          val d = depth + 1
-          s"sem.Lambda(${is.size}, b$d => ${emitScala(body, d)})"
-        case App(left, right) =>
-          s"${emitScala(left, depth)}.app(Seq(${right.map(r => emitScala(r, depth)).mkString(", ")}))"
-        case Pi(vs, body) =>
-          val d = depth + 1
-          s"sem.Pi(${vs.size}, b$d => (Seq(${vs.map(r => emitScala(r, d).mkString(", "))}), ${emitScala(body, d)})"
-        case Universe() => s"sem.Universe()"
-        case Let(vs, body) => ???
-        case Record(ms, ts) =>
-          s"sem.Record(Seq(${ms.map(a => sem.names.register(a, '@')).mkString(", ")}).map(sem.names.lookup), Seq(${ts.map(a => emitScala(a, depth)).mkString(", ")}))"
-        case Sigma(ms, vs) =>
-          val d = depth + 1
-          s"sem.Sigma(Seq(${ms.map(a => sem.names.register(a, '@')).mkString(", ")}).map(sem.names.lookup), b$d => Seq(${vs.map(r => emitScala(r, d)).mkString(", ")}))"
-        case Projection(left, right) =>
-          s"${emitScala(left, depth)}.projection(${sem.names.register(right, '@')})"
-        case Sum(ts) =>
-          s"sem.Sum(Map(${ts.map(p => "sem.names.lookup(" + sem.names.register(p._1, '#')+ ") -> " + emitScala(p._2, depth)).mkString(", ")}))"
-        case Construct(name, t) =>
-          s"sem.Construct(sem.names.lookup(${sem.names.register(name, '#')}), ${emitScala(t, depth)})"
-        case Split(left, right) =>
-          val d = depth + 1
-          s"${emitScala(left, depth)}.split(Map(${right.map(p => "sem.names.lookup(" + sem.names.register(p._1, '#')+ ") -> (b" + d  + " => " + emitScala(p._2, d) + ")").mkString(", ")}))"
-      }
-    }
-    val text = emitScala(term, -1)
-    println("\t" + text)
-    twitterEval.apply[Value](text)
-  }
-
-  def nbe(t: Term) = {
-    println(t)
-    val e = eval(t)
-    val rb = readback(e)
-    println("\t" + rb)
-    rb
-  }
 }
 
 object tests extends scala.App with TypeCheck {
