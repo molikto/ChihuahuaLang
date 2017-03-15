@@ -1,5 +1,7 @@
 sealed abstract class Syntax
-sealed abstract class Term extends Syntax
+sealed abstract class Term extends Syntax {
+  def closed(i: Int): Boolean
+}
 
 // TODO not accurate yet
 // this is currently a remark to remind me where the binding happens, but it is not
@@ -9,7 +11,10 @@ case class BindingSite() extends scala.annotation.StaticAnnotation
 
 case class Module(ds: Seq[(String, Term)]) extends Syntax
 
-case class GlobalReference(str: String) extends Term
+case class GlobalReference(str: String) extends Term {
+  // returns if this term all reference is inside i, ie, if you give it 0, and the term is a r(0, 1), it return false
+  override def closed(i: Int) = true
+}
 
 // the big index is de Bruijn index, the small index is index in the binding sequence...
 // for example
@@ -23,26 +28,42 @@ case class LocalReference(big: Int, small: Int) extends Term {
   assert(big >= 0 && small >= 0)
 
   override def toString = s"r($big, $small)"
+
+  override def closed(i: Int) = big < i
 }
 
 
 
 case class Fix(@BindingSite t: Seq[Term]) extends Term {
   assert(t.size == 1)
+
+  override def closed(i: Int) = t.head.closed(i + 1)
 }
 
-case class Ascription(term: Term, ty: Term) extends Term
+case class Ascription(term: Term, ty: Term) extends Term {
+  override def closed(i: Int) = term.closed(i) && ty.closed(i)
+}
 
 
-case class Lambda(@BindingSite is: Seq[Option[Term]], body: Term) extends Term
-case class Pi(@BindingSite is: Seq[Term], to: Term) extends Term
-case class App(left: Term, right: Seq[Term]) extends Term
+case class Lambda(@BindingSite is: Seq[Option[Term]], body: Term) extends Term {
+  override def closed(i: Int) = is.forall(_.forall(_.closed(i + 1))) && body.closed(i + 1)
+}
+case class Pi(@BindingSite is: Seq[Term], to: Term) extends Term {
+  override def closed(i: Int) = is.forall(_.closed(i + 1)) && to.closed(i + 1)
+}
+case class App(left: Term, right: Seq[Term]) extends Term {
+  override def closed(i: Int) = left.closed(i) && right.forall(_.closed(i))
+}
 
-case class Let(@BindingSite vs: Seq[Term], body: Term) extends Term
+case class Let(@BindingSite vs: Seq[Term], body: Term) extends Term {
+  override def closed(i: Int) = vs.forall(_.closed(i + 1)) && body.closed(i + 1)
+}
 
 
 case class Record(ms: Seq[String], ts: Seq[Term]) extends Term {
   assert(ms.size == ts.size)
+
+  override def closed(i: Int) = ts.forall(_.closed(i))
 }
 
 // assume we have a acyclic directed graph, each node is labeled with a string, we can normalize it like this:
@@ -54,15 +75,27 @@ case class Sigma(ms: Seq[String], @BindingSite ts: Seq[Term]) extends Term {
   assert(ms.size == ts.size)
   assert(normalized())
   def normalized(): Boolean = true // TODO
+
+  override def closed(i: Int) = ts.forall(_.closed(i + 1))
 }
-case class Projection(left: Term, right: String) extends Term
+case class Projection(left: Term, right: String) extends Term {
+  override def closed(i: Int) = left.closed(i)
+}
 
 
-case class Sum(ts: Map[String, Term]) extends Term
-case class Construct(name: String, v: Term) extends Term
-case class Split(left: Term, @BindingSite right: Map[String, Term]) extends Term // the right is binding. not left
+case class Sum(ts: Map[String, Term]) extends Term {
+  override def closed(i: Int) = ts.values.forall(_.closed(i))
+}
+case class Construct(name: String, v: Term) extends Term {
+  override def closed(i: Int) = v.closed(i)
+}
+case class Split(left: Term, @BindingSite right: Map[String, Term]) extends Term {
+  override def closed(i: Int) = left.closed(i) && right.values.forall(_.closed(i + 1))
+}
 
 
 
-case class Universe() extends Term
+case class Universe() extends Term {
+  override def closed(i: Int) = true
+}
 

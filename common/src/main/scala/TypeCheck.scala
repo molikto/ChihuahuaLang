@@ -85,9 +85,8 @@ object sem {
           case (a, sem.Fix(t)) =>
             val k = Seq(OpenReference(0, 0))
             a :/\: t(k)
-
           case (s0@sem.Sigma(ms0, ts0), s1@sem.Sigma(ms1, ts1)) => // assuming nat <: integer we have sigma[@a nat, @b type] <: [@a integer]
-            if (s0 :<: s1) {
+            if (s0 :<: s1) { // TODO bad
               s0
             } else if (s1 :<: s0) {
               s1
@@ -100,7 +99,7 @@ object sem {
 //              val tts0 = vs(ids)
 //              val tts1 = vs1(ids)
 //              sem.Pi(size, tts0._1.zip(tts1._1).map(p => p._1 :\/: p._2)
-              if (p0 :<: p1) { // TODO semantics...
+              if (p0 :<: p1) { // TODO bad
                 p0
               } else if (p1 :<: p0) {
                 p1
@@ -123,7 +122,51 @@ object sem {
       if (this == o) {
         this
       } else {
-        ???
+        (this, o) match {
+          case (sem.Bottom, a) =>
+            a
+          case (a, sem.Bottom) =>
+            a
+          case (sem.Universe(), sem.Universe()) =>
+            sem.Universe()
+          case (sem.Fix(t0), sem.Fix(t1)) =>
+            val k = Seq(OpenReference(0, 0))
+            t0(k) :\/: t1(k)
+          case (sem.Fix(t), a) =>
+            val k = Seq(OpenReference(0, 0))
+            t(k) :\/: a
+          case (a, sem.Fix(t)) =>
+            val k = Seq(OpenReference(0, 0))
+            a :\/: t(k)
+          case (s0@sem.Sigma(ms0, ts0), s1@sem.Sigma(ms1, ts1)) => // assuming nat <: integer we have sigma[@a nat, @b type] <: [@a integer]
+            if (s0 :<: s1) { // TODO bad
+              s1
+            } else if (s1 :<: s0) {
+              s0
+            } else {
+              Bottom
+            }
+          case (p0@sem.Pi(size, vs), p1@sem.Pi(size1, vs1)) => // assuming nat <: integer, we have integer => nat :<: nat => integer
+            if (size == size1) {
+              //              val ids = (0 until size).map(i => OpenReference(0, i))
+              //              val tts0 = vs(ids)
+              //              val tts1 = vs1(ids)
+              //              sem.Pi(size, tts0._1.zip(tts1._1).map(p => p._1 :\/: p._2)
+              if (p0 :<: p1) { // TODO bad
+                p1
+              } else if (p1 :<: p0) {
+                p0
+              } else {
+                Bottom
+              }
+            } else {
+              Bottom
+            }
+          case (sem.Sum(ts), sem.Sum(ts1)) => // assuming nat <: integer, we have sum[#a nat] <: sum[#a integer, #b type]
+            val keys = ts.keySet union ts1.keySet
+            sem.Sum(keys.map(a => (a, ts.getOrElse(a, Bottom) :\/: ts1.getOrElse(a, Bottom))).toMap)
+          case _ => Bottom
+        }
       }
     }
     def projection(s: String): Value = throw new Exception()
@@ -473,7 +516,7 @@ trait TypeCheck extends Normalization {
       }
       delog("Infer. Context:\n\t" + ctx.reverse.map(a => a.map(k => readback(k)).mkString(" __ ")).mkString("\n\t") + "\nTerm:\n\t" + term + "\nType:\n\t" + readback(res))
       if (debugCheck && Debug) {
-        check(term, res)
+        check(term, res, debugPrint = false)
       }
       res
     }
@@ -488,7 +531,7 @@ trait TypeCheck extends Normalization {
     // you can see that the check is basically used by
     // function application.....
     // and fix..................
-    def check(term: Term, ty: Value): Unit = {
+    def check(term: Term, ty: Value, debugPrint: Boolean = true): Unit = {
       (term, force(ty)) match {
         case (Lambda(is, body), sem.Pi(size, inside)) =>
           assert(size == is.size)
@@ -519,7 +562,9 @@ trait TypeCheck extends Normalization {
         case (e, t) =>
           assert(infer(e, debugCheck = false) :<: t)
       }
-      delog("Check. Context:\n\t" + ctx.reverse.map(a => a.map(k => readback(k)).mkString(" __ ")).mkString("\n\t") + "\nTerm:\n\t" + term + "\nType:\n\t" + readback(ty))
+      if (Debug && debugPrint) {
+        delog("Check. Context:\n\t" + ctx.reverse.map(a => a.map(k => readback(k)).mkString(" __ ")).mkString("\n\t") + "\nTerm:\n\t" + term + "\nType:\n\t" + readback(ty))
+      }
     }
 
     def checkIsUniverse(t: Term) = t match {
@@ -548,13 +593,10 @@ trait TypeCheck extends Normalization {
 
 object tests extends scala.App with TypeCheck {
 
-  val u = Universe()
   def r(b: Int, r: Int) = LocalReference(b, r) // reference
-  def pns(i: Int) = (0 until i).map(_ => None) // empty parameters
-  def ps(t: Term*) = t.map(a => Some(a)) // parameters
   def a(t: Term, ts: Term*) = App(t, ts) // app
   def pi(t: Term*) = Pi(t.dropRight(1), t.last)
-  def lam(t: Term*) = Lambda(ps(t.dropRight(1): _*), t.last)
+  def lam(t: Term*) = Lambda(t.dropRight(1).map(a => Some(a)), t.last)
   def tps(t: Term) = t match { // trim parameters
     case l: Lambda =>
       l.copy(is = l.is.map(_ => None))
@@ -567,10 +609,18 @@ object tests extends scala.App with TypeCheck {
   }
   def fix(t: Term) = Fix(Seq(t))
   def abort() = if (2 + 1 == 3) throw new Exception("Abort mission!")
+  def cc(t: Term) = readback(Context.Empty.infer(t))
+
+  val u = Universe()
+  assert(nbe(u) == u)
+  assert(cc(u) == u)
 
   // \(x : type, y: x, z: x) => x
   val t1 = lam(u, r(0, 0), r(0, 0), r(0, 0))
   assert(nbe(t1) == tps(t1))
+  assert(cc(t1) == pi(u, r(0, 0), r(0, 0), r(0, 0)))
+
+  abort()
 
   // record[]
   val unit = Sigma(Seq.empty, Seq.empty)
@@ -587,8 +637,7 @@ object tests extends scala.App with TypeCheck {
 
   val type_id = pi(u, r(0, 0), r(0, 0))
   assert(nbe(type_id) == type_id)
-
-  assert(readback(Context.Empty.infer(id)) == type_id)
+  assert(cc(id) == type_id)
 
 
   // \(a: type) => (x: a) => x
@@ -600,14 +649,13 @@ object tests extends scala.App with TypeCheck {
 
   assert(readback(Context.Empty.infer(idc)) == type_idc)
 
-  //abort()
 
-  val id_u = Lambda(ps(u), r(0, 0))
-  val app_id_u = Lambda(ps(u), a(id, u, r(0, 0)))
+  val id_u = lam(u, r(0, 0))
+  val app_id_u = lam(u, a(id, u, r(0, 0)))
   assert(nbe(id_u) == nbe(app_id_u))
 
   // \(x: type, f: x -> x, a: x) => f (f a)
-  val double = Lambda(ps(u, pi(r(1, 0), r(1, 0)), r(0, 0)), a(r(0, 1), a(r(0, 1), r(0, 2))))
+  val double = lam(u, pi(r(1, 0), r(1, 0)), r(0, 0), a(r(0, 1), a(r(0, 1), r(0, 2))))
   assert(nbe(double) == tps(double))
   //assert(a(double, unit, ))
 
@@ -633,7 +681,7 @@ object tests extends scala.App with TypeCheck {
   val n16 = Construct("succ", n15)
 
   val n0t16 = Seq(n0, n1, n2, n3, n4, n5, n6, n7, n8, n9, n10, n11, n12, n13, n14, n15, n16)
-  val succ = Lambda(ps(num), Construct("succ", r(0, 0)))
+  val succ = lam(num, Construct("succ", r(0, 0)))
 
   assert((n0t16 ++ Seq(succ)).forall(a => nbe(a) == tps(a)))
 
@@ -647,20 +695,20 @@ object tests extends scala.App with TypeCheck {
   assert(nbe(a(succ, a(succ, n3))) == n5)
   assert(nbe(a(succ, a(succ, n4))) == n6)
 
-  val pair = Lambda(ps(u, u), Sigma(Seq("_1", "_2"), Seq(r(1, 0), r(1, 1))))
+  val pair = lam(u, u, Sigma(Seq("_1", "_2"), Seq(r(1, 0), r(1, 1))))
   val pair_num_num = Sigma(Seq("_1", "_2"), Seq(num, num))
   assert(nbe(pair) == tps(pair))
   def mk_pair(seq: Term*) = Record(Seq("_1", "_2"), seq)
   assert(nbe(a(pair, num, num)) == pair_num_num)
 
   // fix self => (a, b: nat) => split a { case zero => b; case succ k => succ(self k b) }
-  val plus = fix(Lambda(ps(num, num), Split(r(0, 0), Map("zero" -> r(1, 1), "succ" -> Construct("succ", a(r(2, 0), r(0, 0), r(1, 1)))))))
+  val plus = fix(lam(num, num, Split(r(0, 0), Map("zero" -> r(1, 1), "succ" -> Construct("succ", a(r(2, 0), r(0, 0), r(1, 1)))))))
   // fix self => (a, b: nat) => split a { case zero => b; case succ k => succ(self b k) }
-  val plus1 = fix(Lambda(ps(num, num), Split(r(0, 0), Map("zero" -> r(1, 1), "succ" -> Construct("succ", a(r(2, 0), r(1, 1), r(0, 0)))))))
+  val plus1 = fix(lam(num, num, Split(r(0, 0), Map("zero" -> r(1, 1), "succ" -> Construct("succ", a(r(2, 0), r(1, 1), r(0, 0)))))))
   // fix self => (b, a: nat) => split a { case zero => b; case succ k => succ(self k b) }
-  val plus2 = fix(Lambda(ps(num, num), Split(r(0, 1), Map("zero" -> r(1, 0), "succ" -> Construct("succ", a(r(2, 0), r(0, 0), r(1, 0)))))))
+  val plus2 = fix(lam(num, num, Split(r(0, 1), Map("zero" -> r(1, 0), "succ" -> Construct("succ", a(r(2, 0), r(0, 0), r(1, 0)))))))
   // fix self => (b, a: nat) => split a { case zero => b; case succ k => succ(self b k) }
-  val plus3 = fix(Lambda(ps(num, num), Split(r(0, 1), Map("zero" -> r(1, 0), "succ" -> Construct("succ", a(r(2, 0), r(1, 0), r(0, 0)))))))
+  val plus3 = fix(lam(num, num, Split(r(0, 1), Map("zero" -> r(1, 0), "succ" -> Construct("succ", a(r(2, 0), r(1, 0), r(0, 0)))))))
   assert(nbe(plus) == tps(plus))
 
   for (i <- 0 to 16) {
@@ -675,8 +723,8 @@ object tests extends scala.App with TypeCheck {
   }
 
   // fix self => (a, b: nat) => split a { case zero => 0; case succ k => (plus b (self k b) }
-  val mult = fix(Lambda(ps(num, num), Split(r(0, 0), Map("zero" -> n0, "succ" -> a(plus, r(1, 1), a(r(2, 0), r(0, 0), r(1, 1)))))))
-  val mult1 = fix(Lambda(ps(num, num), Split(r(0, 0), Map("zero" -> n0, "succ" -> a(plus, r(1, 1), a(r(2, 0), r(1, 1), r(0, 0)))))))
+  val mult = fix(lam(num, num, Split(r(0, 0), Map("zero" -> n0, "succ" -> a(plus, r(1, 1), a(r(2, 0), r(0, 0), r(1, 1)))))))
+  val mult1 = fix(lam(num, num, Split(r(0, 0), Map("zero" -> n0, "succ" -> a(plus, r(1, 1), a(r(2, 0), r(1, 1), r(0, 0)))))))
 
   for (i <- 0 to 16) {
     for (j <- 0 to 16) {
