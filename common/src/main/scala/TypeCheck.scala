@@ -19,6 +19,79 @@ object sem {
   // these are normal forms?
   sealed abstract class Value {
     def :<:(o: Value): Boolean = {
+      if (this == o) {
+        true
+      } else {
+        (this, o) match {
+          case (sem.Universe(), sem.Universe()) =>
+            true
+          case (sem.Fix(t0), sem.Fix(t1)) =>
+            val k = Seq(OpenReference(0, 0))
+            t0(k) :<: t1(k)
+          case (sem.Fix(t), a) =>
+            val k = Seq(OpenReference(0, 0))
+            t(k) :<: a
+          case (a, sem.Fix(t)) =>
+            val k = Seq(OpenReference(0, 0))
+            a :<: t(k)
+          case (sem.Sigma(ms0, ts0), sem.Sigma(ms1, ts1)) => // assuming nat <: integer we have sigma[@a nat, @b type] <: [@a integer]
+            if (ms1.startsWith(ms0)) {
+              val ids = ms1.indices.map(i => OpenReference(0, i))
+              val tts0 = ts0(ids)
+              val tts1 = ts1(ids)
+              tts0.zip(tts1).forall(p => p._1 :<: p._2)
+            } else false
+          case (sem.Pi(size, vs), sem.Pi(size1, vs1)) => // assuming nat <: integer, we have integer => nat :<: nat => integer
+            if (size == size1) {
+              val ids = (0 until size).map(i => OpenReference(0, i))
+              val tts0 = vs(ids)
+              val tts1 = vs1(ids)
+              tts0._1.zip(tts1._1).forall(pair => pair._2 :<: pair._1) && tts0._2 :<: tts1._2
+            } else false
+          case (sem.Sum(ts), sem.Sum(ts1)) => // assuming nat <: integer, we have sum[#a nat] <: sum[#a integer, #b type]
+            if ((ts.keySet -- ts1.keySet).isEmpty) {
+              ts.forall(pair => pair._2 :<: ts1(pair._1))
+            } else false
+        }
+      }
+    }
+
+    // meet
+    // c = a /\ b
+    // then c <: a and c <: b
+    def :/\:(o: Value): Value = {
+      if (this == o) {
+        this
+      } else {
+        (this, o) match {
+          case (sem.Universe(), sem.Universe()) =>
+            sem.Universe()
+          case (sem.Fix(t0), sem.Fix(t1)) =>
+            val k = Seq(OpenReference(0, 0))
+            t0(k) :/\: t1(k)
+          case (sem.Fix(t), a) =>
+            val k = Seq(OpenReference(0, 0))
+            t(k) :/\: a
+          case (a, sem.Fix(t)) =>
+            val k = Seq(OpenReference(0, 0))
+            a :/\: t(k)
+          case (sem.Sigma(ms0, ts0), sem.Sigma(ms1, ts1)) => // assuming nat <: integer we have sigma[@a nat, @b type] <: [@a integer]
+            ???
+          case (sem.Pi(size, vs), sem.Pi(size1, vs1)) => // assuming nat <: integer, we have integer => nat :<: nat => integer
+            ???
+          case (sem.Sum(ts), sem.Sum(ts1)) => // assuming nat <: integer, we have sum[#a nat] <: sum[#a integer, #b type]
+            ???
+        }
+      }
+    }
+
+    // join
+    def :\/:(o: Value): Value = {
+      if (this == o) {
+        this
+      } else {
+        ???
+      }
     }
     def projection(s: String): Value = throw new Exception()
     def app(seq: Seq[Value]): Value = throw new Exception()
@@ -27,11 +100,13 @@ object sem {
 
 
 
-  def joint(seq: Seq[Value]): Value = {
-
+  def join(seq: Seq[Value]): Value = {
+    assert(seq.nonEmpty)
+    seq.tail.fold(seq.head) { (v0, v1) => v0 :\/: v1}
   }
   def meet(seq: Seq[Value]): Value = {
-
+    assert(seq.nonEmpty)
+    seq.tail.fold(seq.head) { (v0, v1) => v0 :/\: v1}
   }
 
 
