@@ -224,7 +224,7 @@ trait TypeCheck extends Normalization {
 
   // local typing context
   // the context is so that the head is index 0
-  case class Ctx(ctx: Seq[Seq[Value]]) {
+  case class Context(ctx: Seq[Seq[Value]]) {
 
     def head = ctx.head
     // new index
@@ -330,13 +330,13 @@ trait TypeCheck extends Normalization {
     }
   }
 
-  object Ctx {
-    val Empty = Ctx(Seq.empty)
+  object Context {
+    val Empty = Context(Seq.empty)
   }
 
   def check(f: Module): Unit = {
     f.ds.foreach(d => {
-      val ty = Ctx.Empty.infer(d._2)
+      val ty = Context.Empty.infer(d._2)
       sem.defs += (d._1 -> sem.Global(eval(d._2), ty))
     })
   }
@@ -387,7 +387,7 @@ object tests extends scala.App with TypeCheck {
   val type_id = pi(u, r(0, 0), r(0, 0))
   assert(nbe(type_id) == type_id)
 
-  assert(readback(Ctx.Empty.infer(id)) == type_id)
+  assert(readback(Context.Empty.infer(id)) == type_id)
 
 
   // \(a: type) => (x: a) => x
@@ -397,7 +397,7 @@ object tests extends scala.App with TypeCheck {
   val type_idc = pi(u, pi(r(1, 0), r(1, 0)))
   assert(nbe(type_idc) == type_idc)
 
-  assert(readback(Ctx.Empty.infer(idc)) == type_idc)
+  assert(readback(Context.Empty.infer(idc)) == type_idc)
 
   abort()
 
