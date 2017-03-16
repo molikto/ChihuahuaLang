@@ -406,6 +406,8 @@ trait TypeCheck extends Normalization {
 
   def global(g: GlobalReference) = sem.global(g.str)
 
+  val inferCache = mutable.Map.empty[Term, Value]
+
   // local typing context
   // the context is so that the head is index 0
   case class Context(ctx: Seq[Seq[Value]]) {
@@ -420,8 +422,19 @@ trait TypeCheck extends Normalization {
     def es(v: Value) = this.copy(ctx = (ctx.head :+ v) +: ctx.tail)
 
     def local(l: LocalReference): Value = ctx(l.big)(l.small)
+
+
     // return the type of a term in semantics world
     def infer(term: Term, debugCheck: Boolean = true): Value = {
+      val termClosed = term.closed()
+      if (termClosed) {
+        inferCache.get(term) match {
+          case Some(a) =>
+            if (Debug) delog("Infer. Cache hit for closed term " + term)
+            return a // ALERT: early return!!!
+          case _ => Unit
+        }
+      }
       def checkLambdaArgs(is: Seq[Option[Term]]): Context = {
         assert(is.forall(a => a.nonEmpty))
         is.map(_.get).foldLeft(el()) { (c, p) =>
@@ -514,6 +527,7 @@ trait TypeCheck extends Normalization {
         case Universe() =>
           sem.Universe()
       }
+      if (termClosed) inferCache.put(term, res)
       delog("Infer. Context:\n\t" + ctx.reverse.map(a => a.map(k => readback(k)).mkString(" __ ")).mkString("\n\t") + "\nTerm:\n\t" + term + "\nType:\n\t" + readback(res))
       if (debugCheck && Debug) {
         check(term, res, debugPrint = false)
