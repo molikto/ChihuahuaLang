@@ -381,17 +381,17 @@ trait Normalization extends UtilsCommon {
       case GlobalReference(str) => sem.GlobalReference(str)
       case _ =>
         val text = emitScala(term, -1)
-        if (debugText) delog("\t" + text)
+        if (Debug && debugText) delog("\t" + text)
         twitterEval.apply[Value](text)
     }
   }
 
 
   def nbe(t: Term) = {
-    delog("NbE: " + t)
+    if (Debug) delog("NbE: " + t)
     val e = eval(t, debugText = true)
     val rb = readback(e)
-    delog("\t" + rb)
+    if (Debug) delog("\t" + rb)
     rb
   }
 
@@ -430,7 +430,7 @@ trait TypeCheck extends Normalization {
       if (termClosed) {
         inferCache.get(term) match {
           case Some(a) =>
-            if (Debug) delog("Infer. Cache hit for closed term " + term)
+            if (Debug && debugCheck) delog("Infer. Cache hit for closed term " + term)
             return a // ALERT: early return!!!
           case _ => Unit
         }
@@ -528,9 +528,9 @@ trait TypeCheck extends Normalization {
           sem.Universe()
       }
       if (termClosed) inferCache.put(term, res)
-      delog("Infer. Context:\n\t" + ctx.reverse.map(a => a.map(k => readback(k)).mkString(" __ ")).mkString("\n\t") + "\nTerm:\n\t" + term + "\nType:\n\t" + readback(res))
       if (debugCheck && Debug) {
-        check(term, res, debugPrint = false)
+        delog("Infer. Context:\n\t" + ctx.reverse.map(a => a.map(k => readback(k)).mkString(" __ ")).mkString("\n\t") + "\nTerm:\n\t" + term + "\nType:\n\t" + readback(res))
+        check(term, res, debugCheck = false)
       }
       res
     }
@@ -545,7 +545,7 @@ trait TypeCheck extends Normalization {
     // you can see that the check is basically used by
     // function application.....
     // and fix..................
-    def check(term: Term, ty: Value, debugPrint: Boolean = true): Unit = {
+    def check(term: Term, ty: Value, debugCheck: Boolean = true): Unit = {
       (term, force(ty)) match {
         case (Lambda(is, body), sem.Pi(size, inside)) =>
           assert(size == is.size)
@@ -574,9 +574,9 @@ trait TypeCheck extends Normalization {
             i += 1
           }
         case (e, t) =>
-          assert(infer(e, debugCheck = false) :<: t)
+          if (debugCheck) assert(infer(e, debugCheck = false) :<: t)
       }
-      if (Debug && debugPrint) {
+      if (Debug && debugCheck) {
         delog("Check. Context:\n\t" + ctx.reverse.map(a => a.map(k => readback(k)).mkString(" __ ")).mkString("\n\t") + "\nTerm:\n\t" + term + "\nType:\n\t" + readback(ty))
       }
     }
@@ -632,7 +632,7 @@ object tests extends scala.App with TypeCheck {
   // \(x : type, y: x, z: x) => x
   val t1 = lam(u, r(0, 0), r(0, 0), r(0, 0))
   assert(nbe(t1) == tps(t1))
-  assert(cc(t1) == pi(u, r(0, 0), r(0, 0), r(0, 0)))
+  assert(cc(t1) == pi(u, r(0, 0), r(0, 0), u))
 
   abort()
 

@@ -1,34 +1,30 @@
 sealed abstract class Syntax
 sealed abstract class Term extends Syntax {
-  private var _closed = Integer.MIN_VALUE
 
-  def closed0(i: Int): Int // return a integer, if it is >= 0, then this term is not open
+  private var _closed = Integer.MIN_VALUE // >= 0 means their is a open term in this thing...
 
-  def closed(i: Int): Int = {
-    val k = closed0(i)
-    _closed = k - i
+  def closed0(): Int // return a integer, if it is >= 0, then this term is not open
+
+  def closedRemember(): Int = {
+    val k = closed0()
+    _closed = k
     k
   }
 
   def closed(): Boolean = {
     if (_closed == Integer.MIN_VALUE) {
-      closed(-1)
+      closedRemember()
     }
-    _closed <= 0
+    _closed < 0
   }
 }
-
-// TODO not accurate yet
-// this is currently a remark to remind me where the binding happens, but it is not
-// good enough, each ast has their unique thing...
-case class BindingSite() extends scala.annotation.StaticAnnotation
 
 
 case class Module(ds: Seq[(String, Term)]) extends Syntax
 
 case class GlobalReference(str: String) extends Term {
   // returns if this term all reference is inside i, ie, if you give it 0, and the term is a r(0, 1), it return false
-  override def closed0(i: Int) = i
+  override def closed0(): Int = -1
 }
 
 // the big index is de Bruijn index, the small index is index in the binding sequence...
@@ -44,41 +40,43 @@ case class LocalReference(big: Int, small: Int) extends Term {
 
   override def toString = s"r($big, $small)"
 
-  override def closed0(i: Int) = big - i
+  override def closed0(): Int = big
 }
 
 
 
-case class Fix(@BindingSite t: Seq[Term]) extends Term {
+case class Fix(t: Seq[Term]) extends Term {
   assert(t.size == 1)
 
-  override def closed0(i: Int) = t.head.closed(i + 1)
+  override def closed0(): Int = t.head.closedRemember() - 1
 }
 
 case class Ascription(term: Term, ty: Term) extends Term {
-  override def closed0(i: Int) = term.closed(i) max ty.closed(i)
+  override def closed0(): Int = term.closedRemember() max ty.closedRemember() - 1
 }
 
 
-case class Lambda(@BindingSite is: Seq[Option[Term]], body: Term) extends Term {
-  override def closed0(i: Int) = (is.flatMap(_.map(_.closed(i + 1))) :+ body.closed(i + 1)).max
+case class Lambda(is: Seq[Option[Term]], body: Term) extends Term {
+  override def closed0(): Int = (is.flatMap(_.map(_.closedRemember())) :+ body.closedRemember()).max - 1
+
+  override def toString = s"lam(${is.map(_.map(_.toString).getOrElse(" ")).mkString(", ")}) => $body"
 }
-case class Pi(@BindingSite is: Seq[Term], to: Term) extends Term {
-  override def closed0(i: Int) = (is.map(_.closed(i + 1)) :+ to.closed(i + 1)).max
+case class Pi(is: Seq[Term], to: Term) extends Term {
+  override def closed0(): Int = (is.map(_.closedRemember()) :+ to.closedRemember()).max - 1
 }
 case class App(left: Term, right: Seq[Term]) extends Term {
-  override def closed0(i: Int) = (left.closed(i) +: right.map(_.closed(i))).max
+  override def closed0(): Int = (left.closedRemember() +: right.map(_.closedRemember())).max
 }
 
-case class Let(@BindingSite vs: Seq[Term], body: Term) extends Term {
-  override def closed0(i: Int) = (vs.map(_.closed(i + 1)) :+ body.closed(i + 1)).max
+case class Let(vs: Seq[Term], body: Term) extends Term {
+  override def closed0(): Int = (vs.map(_.closedRemember()) :+ body.closedRemember()).max - 1
 }
 
 
 case class Record(ms: Seq[String], ts: Seq[Term]) extends Term {
   assert(ms.size == ts.size)
 
-  override def closed0(i: Int) = if (ts.isEmpty) i else ts.map(_.closed(i)).max
+  override def closed0(): Int = if (ts.isEmpty) -1 else ts.map(_.closedRemember()).max
 }
 
 // assume we have a acyclic directed graph, each node is labeled with a string, we can normalize it like this:
@@ -86,31 +84,33 @@ case class Record(ms: Seq[String], ts: Seq[Term]) extends Term {
 // second list all labels with dependencies of the first batch, order them in label order
 // ...
 // we will always assume that our Sigma type is of this order...
-case class Sigma(ms: Seq[String], @BindingSite ts: Seq[Term]) extends Term {
+case class Sigma(ms: Seq[String], ts: Seq[Term]) extends Term {
   assert(ms.size == ts.size)
   assert(normalized())
   def normalized(): Boolean = true // TODO
 
-  override def closed0(i: Int) = if (ts.isEmpty) i else ts.map(_.closed(i + 1)).max
+  override def closed0(): Int = if (ts.isEmpty) -1 else ts.map(_.closedRemember()).max - 1
 }
 case class Projection(left: Term, right: String) extends Term {
-  override def closed0(i: Int) = left.closed(i)
+  override def closed0(): Int = left.closedRemember()
 }
 
 
 case class Sum(ts: Map[String, Term]) extends Term {
-  override def closed0(i: Int) = if (ts.isEmpty) i else  ts.values.map(_.closed(i)).max
+  override def closed0(): Int = if (ts.isEmpty) -1 else  ts.values.map(_.closedRemember()).max - 1
 }
 case class Construct(name: String, v: Term) extends Term {
-  override def closed0(i: Int) = v.closed(i)
+  override def closed0(): Int = v.closedRemember()
 }
-case class Split(left: Term, @BindingSite right: Map[String, Term]) extends Term {
-  override def closed0(i: Int) = (left.closed(i) +: right.values.map(_.closed(i + 1)).toSeq).max
+case class Split(left: Term, right: Map[String, Term]) extends Term {
+  override def closed0(): Int = (left.closedRemember() +: right.values.map(_.closedRemember() - 1).toSeq).max
 }
 
 
 
 case class Universe() extends Term {
-  override def closed0(i: Int) = i
+  override def closed0(): Int = -1
+
+  override def toString = "u"
 }
 
