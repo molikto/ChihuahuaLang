@@ -1,6 +1,10 @@
 sealed abstract class Syntax
+
 sealed abstract class Term extends Syntax {
 
+  /**
+    * logic for closed, closed terms can be remembered for their types
+    */
   private var _closed = Integer.MIN_VALUE // >= 0 means their is a open term in this thing...
 
   def closed0(): Int // return a integer, if it is >= 0, then this term is not open
@@ -23,7 +27,7 @@ sealed abstract class Term extends Syntax {
 case class Module(ds: Seq[(String, Term)]) extends Syntax
 
 case class GlobalReference(str: String) extends Term {
-  // returns if this term all reference is inside i, ie, if you give it 0, and the term is a r(0, 1), it return false
+  // global reference is considered closed, because global reference is unique and constant after defined
   override def closed0(): Int = -1
 }
 
@@ -38,8 +42,11 @@ case class GlobalReference(str: String) extends Term {
 case class LocalReference(big: Int, small: Int) extends Term {
   assert(big >= 0 && small >= 0)
 
-  override def toString = s"r($big, $small)"
+  var debugGeneric: String = ""
 
+  override def toString = if (debugGeneric.isEmpty) s"r($big, $small)" else s"r($big, $small, $debugGeneric)"
+
+  // a local reference itself is never closed...
   override def closed0(): Int = big
 }
 
@@ -90,9 +97,7 @@ case class Sigma(ms: Seq[String], ts: Seq[Term]) extends Term {
   assert(ms.size == ts.size)
   assert(normalized())
   def normalized(): Boolean = true // TODO
-
   override def closed0(): Int = if (ts.isEmpty) -1 else ts.map(_.closedRemember()).max - 1
-
   override def toString = s"sigma[${ms.zip(ts).map(a => a._1 + " @ " + a._2).mkString(", ")}]"
 }
 case class Projection(left: Term, right: String) extends Term {
@@ -116,7 +121,6 @@ case class Split(left: Term, right: Map[String, Term]) extends Term {
 
 case class Universe() extends Term {
   override def closed0(): Int = -1
-
   override def toString = "u"
 }
 

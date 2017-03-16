@@ -333,16 +333,18 @@ trait Normalization extends UtilsCommon {
                 // we should give it 0
                 // when depth = 0
                 // we give it and we read a generic at i = 0, we should give it 1
-                return LocalReference(depth + 1 + i, j)
+                val local = LocalReference(depth + 1 + i, j)
+                local.debugGeneric = g
+                return local
               }
             }
           }
           throw new Exception("")
         case sem.Fix(f) =>
           Fix(Seq(rec(f(Seq(sem.OpenReference(ccc, 0))), nd)))
-        case sem.OpenReference(d, s) =>
+        case sem.OpenReference(d, s) => // we don't want truely open references, all local reference must be from a Generic
+          assert(d < 0)
           LocalReference(d + depth + 1, s)
-
         case l@sem.Lambda(size, _) =>
           val ps = (0 until size).map(a => sem.OpenReference(ccc, a))
           Lambda((0 until size).map(_ => None), rec(l.app(ps), nd))
