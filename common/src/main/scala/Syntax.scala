@@ -102,9 +102,11 @@ case class Projection(left: Term, right: String) extends Term {
 
 case class Sum(ts: Map[String, Term]) extends Term {
   override def closed0(): Int = if (ts.isEmpty) -1 else  ts.values.map(_.closedRemember()).max - 1
+  override def toString = s"sum{${ts.map(a => a._1 + " # " + a._2).mkString(", ")}}"
 }
 case class Construct(name: String, v: Term) extends Term {
   override def closed0(): Int = v.closedRemember()
+  override def toString = s"#($name $v)"
 }
 case class Split(left: Term, right: Map[String, Term]) extends Term {
   override def closed0(): Int = (left.closedRemember() +: right.values.map(_.closedRemember() - 1).toSeq).max

@@ -30,7 +30,7 @@ object sem {
       case _ => false
     }
 
-    def :<:(o: Value): Boolean = {
+    def subtypeOf(o: Value): Boolean = {
       if (this == o) {
         true
       } else {
@@ -43,37 +43,37 @@ object sem {
             true
           case (sem.Fix(t0), sem.Fix(t1)) =>
             val k = Seq(OpenReference(0, 0))
-            t0(k) :<: t1(k)
+            t0(k) subtypeOf t1(k)
           case (sem.Fix(t), a) =>
             val k = Seq(OpenReference(0, 0))
-            t(k) :<: a
+            t(k) subtypeOf a
           case (a, sem.Fix(t)) =>
             val k = Seq(OpenReference(0, 0))
-            a :<: t(k)
+            a subtypeOf t(k)
           case (GlobalReference(g1), GlobalReference(g2)) =>
             if (g1 == g2) true
-            else sem.global(g1).svalue :<: sem.global(g2).svalue
+            else sem.global(g1).svalue subtypeOf sem.global(g2).svalue
           case (GlobalReference(g1), g2) =>
-            sem.global(g1).svalue :<: g2
+            sem.global(g1).svalue subtypeOf g2
           case (g1, GlobalReference(g2)) =>
-            g1 :<: sem.global(g2).svalue
+            g1 subtypeOf sem.global(g2).svalue
           case (sem.Sigma(ms0, ts0), sem.Sigma(ms1, ts1)) => // assuming nat <: integer we have sigma[@a nat, @b type] <: [@a integer]
             if (ms1.startsWith(ms0)) { // TODO advanced subtyping for records
               val ids = ms1.indices.map(i => OpenReference(0, i))
               val tts0 = ts0(ids)
               val tts1 = ts1(ids)
-              tts0.zip(tts1).forall(p => p._1 :<: p._2)
+              tts0.zip(tts1).forall(p => p._1 subtypeOf p._2)
             } else false
-          case (sem.Pi(size, vs), sem.Pi(size1, vs1)) => // assuming nat <: integer, we have integer => nat :<: nat => integer
+          case (sem.Pi(size, vs), sem.Pi(size1, vs1)) => // assuming nat <: integer, we have integer => nat subtypeOf nat => integer
             if (size == size1) {
               val ids = (0 until size).map(i => OpenReference(0, i))
               val tts0 = vs(ids)
               val tts1 = vs1(ids)
-              tts0._1.zip(tts1._1).forall(pair => pair._2 :<: pair._1) && tts0._2 :<: tts1._2
+              tts0._1.zip(tts1._1).forall(pair => pair._2 subtypeOf pair._1) && (tts0._2 subtypeOf tts1._2)
             } else false
           case (sem.Sum(ts), sem.Sum(ts1)) => // assuming nat <: integer, we have sum[#a nat] <: sum[#a integer, #b type]
             if ((ts.keySet -- ts1.keySet).isEmpty) {
-              ts.forall(pair => pair._2 :<: ts1(pair._1))
+              ts.forall(pair => pair._2 subtypeOf ts1(pair._1))
             } else false
           case _ => false
         }
@@ -104,22 +104,22 @@ object sem {
             val k = Seq(OpenReference(0, 0))
             a :/\: t(k)
           case (s0@sem.Sigma(ms0, ts0), s1@sem.Sigma(ms1, ts1)) => // assuming nat <: integer we have sigma[@a nat, @b type] <: [@a integer]
-            if (s0 :<: s1) { // TODO bad
+            if (s0 subtypeOf s1) { // TODO bad
               s0
-            } else if (s1 :<: s0) {
+            } else if (s1 subtypeOf s0) {
               s1
             } else {
               Bottom
             }
-          case (p0@sem.Pi(size, vs), p1@sem.Pi(size1, vs1)) => // assuming nat <: integer, we have integer => nat :<: nat => integer
+          case (p0@sem.Pi(size, vs), p1@sem.Pi(size1, vs1)) => // assuming nat <: integer, we have integer => nat subtypeOf nat => integer
             if (size == size1) {
 //              val ids = (0 until size).map(i => OpenReference(0, i))
 //              val tts0 = vs(ids)
 //              val tts1 = vs1(ids)
 //              sem.Pi(size, tts0._1.zip(tts1._1).map(p => p._1 :\/: p._2)
-              if (p0 :<: p1) { // TODO bad
+              if (p0 subtypeOf p1) { // TODO bad
                 p0
-              } else if (p1 :<: p0) {
+              } else if (p1 subtypeOf p0) {
                 p1
               } else {
                 Bottom
@@ -157,22 +157,22 @@ object sem {
             val k = Seq(OpenReference(0, 0))
             a :\/: t(k)
           case (s0@sem.Sigma(ms0, ts0), s1@sem.Sigma(ms1, ts1)) => // assuming nat <: integer we have sigma[@a nat, @b type] <: [@a integer]
-            if (s0 :<: s1) { // TODO bad
+            if (s0 subtypeOf s1) { // TODO bad
               s1
-            } else if (s1 :<: s0) {
+            } else if (s1 subtypeOf s0) {
               s0
             } else {
               Bottom
             }
-          case (p0@sem.Pi(size, vs), p1@sem.Pi(size1, vs1)) => // assuming nat <: integer, we have integer => nat :<: nat => integer
+          case (p0@sem.Pi(size, vs), p1@sem.Pi(size1, vs1)) => // assuming nat <: integer, we have integer => nat subtypeOf nat => integer
             if (size == size1) {
               //              val ids = (0 until size).map(i => OpenReference(0, i))
               //              val tts0 = vs(ids)
               //              val tts1 = vs1(ids)
               //              sem.Pi(size, tts0._1.zip(tts1._1).map(p => p._1 :\/: p._2)
-              if (p0 :<: p1) { // TODO bad
+              if (p0 subtypeOf p1) { // TODO bad
                 p1
-              } else if (p1 :<: p0) {
+              } else if (p1 subtypeOf p0) {
                 p0
               } else {
                 Bottom
@@ -488,6 +488,7 @@ trait TypeCheck extends Normalization {
         case g: GlobalReference => throw new IllegalStateException("Should be short cut")
         case l: LocalReference => local(l)
         case Fix(t) =>
+          def checkFixType(a: Term) = el().es(sem.Universe()).infer(a)
           t.head match {
             case Ascription(tt, ty) =>
               el().es(checkIsTypeThenEval(ty)).infer(tt)
@@ -496,6 +497,12 @@ trait TypeCheck extends Normalization {
               val vty = c.checkIsTypeThenEval(ty)
               c.check(tt, vty)
               eval(Pi(c.head.map(a => readback(a)), readback(vty)))
+            case a: Sum =>
+              checkFixType(a)
+            case a: Pi =>
+              checkFixType(a)
+            case a: Sigma =>
+              checkFixType(a)
             case _ => throw new Exception("Cannot infer Fix")
           }
         case Ascription(left, right) =>
@@ -593,10 +600,10 @@ trait TypeCheck extends Normalization {
     }
 
 
-    // this can be considered just a wrapper for infer(term) :<: t
+    // this can be considered just a wrapper for infer(term) subtypeOf t
     // only that: it calls force
     // it handles parameter less lambda
-    // so ALWAYS call this instead of :<: directly
+    // so ALWAYS call this instead of subtypeOf directly
     // (unless you know what you are doing)
     // and if you look at the code above,
     // you can see that the check is basically used by
@@ -606,7 +613,7 @@ trait TypeCheck extends Normalization {
       val ty = force(ty0)
       term match {
         case GlobalReference(g) =>
-          assert(sem.global(g).stype :<: ty) // early return!!!
+          assert(sem.global(g).stype subtypeOf ty) // early return!!!
           delog(lstr() + "Checked global reference " + term + " with " + readback(ty))
           return
         case _ => Unit // drop out
@@ -614,7 +621,7 @@ trait TypeCheck extends Normalization {
       if (term.closed()) {
         inferCache.get(term) match {
           case Some(a) =>
-            assert(a :<: ty)
+            assert(a subtypeOf ty)
             if (Debug && !debuggingInferCheck) delog("Checked. Cache hit for closed term " + term + " with " + readback(ty))
             if (!debuggingInferCheck) return
           case _ => Unit // ALERT dropout!
@@ -628,7 +635,7 @@ trait TypeCheck extends Normalization {
         case (Lambda(is, body), p@sem.Pi(size, inside)) =>
           assert(size == is.size)
           if (is.forall(_.nonEmpty)) {
-            assert(infer(term, fromCheck = true) :<: p)
+            assert(infer(term, fromCheck = true) subtypeOf p)
           } else if (is.forall(_.isEmpty)) {
             val t = inside(is.indices.map(a => OpenReference(0, a)))
             el(t._1).check(body, t._2)
@@ -652,7 +659,7 @@ trait TypeCheck extends Normalization {
             i += 1
           }
         case (e, t) =>
-          if (!debuggingInferCheck) assert(infer(e, fromCheck = true) :<: t)
+          if (!debuggingInferCheck) assert(infer(e, fromCheck = true) subtypeOf t)
       }
       if (!debuggingInferCheck) {
         level -= 1
@@ -673,7 +680,7 @@ trait TypeCheck extends Normalization {
       eval(t)
     }
     // no need to go inside check for now
-    def checkIsType(t: Term): Unit = assert(infer(t) :<: sem.Universe())
+    def checkIsType(t: Term): Unit = assert(infer(t) subtypeOf sem.Universe())
   }
 
   object Context {
@@ -825,38 +832,46 @@ object tests extends scala.App with TypeCheck {
 
 
 
-  Debug = true
   // \(x: type, f: x -> x, a: x) => f (f a)
   val double = debugDefine("double",
     lam(u, pi(r(1, 0), r(1, 0)), r(0, 0), a(r(0, 1), a(r(0, 1), r(0, 2)))),
     pi(u, pi(r(1, 0), r(1, 0)), r(0, 0), r(0, 0))
   )
 
-  abort()
-
   // fix self => sum(zero: unit, succ: self)
-  val num = fix(Sum(Map("zero" -> unit, "succ" -> r(0, 0))))
+  val num = debugDefine("num",
+    fix(Sum(Map("zero" -> unit, "succ" -> r(0, 0)))),
+    u
+  )
 
-  val n0 = Construct("zero", unit0)
-  val n1 = Construct("succ", n0)
-  val n2 = Construct("succ", n1)
-  val n3 = Construct("succ", n2)
-  val n4 = Construct("succ", n3)
-  val n5 = Construct("succ", n4)
-  val n6 = Construct("succ", n5)
-  val n7 = Construct("succ", n6)
-  val n8 = Construct("succ", n7)
-  val n9 = Construct("succ", n8)
-  val n10 = Construct("succ", n9)
-  val n11 = Construct("succ", n10)
-  val n12 = Construct("succ", n11)
-  val n13 = Construct("succ", n12)
-  val n14 = Construct("succ", n13)
-  val n15 = Construct("succ", n14)
-  val n16 = Construct("succ", n15)
+  Debug = true
+
+  val n0 = debugDefine("n0", Construct("zero", unit0), num)
+  val n1 = debugDefine("n1", Construct("succ", n0), num)
+  val n2 = debugDefine("n2", Construct("succ", n1), num)
+  val n3 = debugDefine("n3", Construct("succ", n2) , num)
+  val n4 = debugDefine("n4", Construct("succ", n3) , num)
+  val n5 = debugDefine("n5", Construct("succ", n4) , num)
+  val n6 = debugDefine("n6", Construct("succ", n5) , num)
+  val n7 = debugDefine("n7",  Construct("succ", n6) , num)
+  val n8 = debugDefine("n8",  Construct("succ", n7) , num)
+  val n9 = debugDefine("n9", Construct("succ", n8) , num)
+  val n10 = debugDefine("n10", Construct("succ", n9) , num)
+  val n11 = debugDefine("n11", Construct("succ", n10) , num)
+  val n12 = debugDefine("n12", Construct("succ", n11) , num)
+  val n13 = debugDefine("n13", Construct("succ", n12) , num)
+  val n14 = debugDefine("n14", Construct("succ", n13) , num)
+  val n15 = debugDefine("n15", Construct("succ", n14), num)
+  val n16 = debugDefine("n16", Construct("succ", n15) , num)
+
 
   val n0t16 = Seq(n0, n1, n2, n3, n4, n5, n6, n7, n8, n9, n10, n11, n12, n13, n14, n15, n16)
-  val succ = lam(num, Construct("succ", r(0, 0)))
+
+  val succ = debugDefine("succ",
+    lam(num, Construct("succ", r(0, 0))),
+    pi(num, num)
+  )
+
 
   assert((n0t16 ++ Seq(succ)).forall(a => nbe(a) == tps(a)))
 
@@ -869,6 +884,8 @@ object tests extends scala.App with TypeCheck {
   assert(nbe(a(succ, a(succ, n2))) == n4)
   assert(nbe(a(succ, a(succ, n3))) == n5)
   assert(nbe(a(succ, a(succ, n4))) == n6)
+
+  abort()
 
   val pair = lam(u, u, Sigma(Seq("_1", "_2"), Seq(r(1, 0), r(1, 1))))
   val pair_num_num = Sigma(Seq("_1", "_2"), Seq(num, num))
