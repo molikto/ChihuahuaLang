@@ -43,7 +43,7 @@ trait UtilsCommon {
   def cc(i: Int) = i * 1F / 0xFF
 
 
-  val Debug = true
+  var Debug = true
 
   def static_assert(a: Boolean) = {
     if (Debug) assert(a)

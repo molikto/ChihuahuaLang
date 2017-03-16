@@ -3,6 +3,7 @@ import org.snailya.mygame.UtilsCommon
 import sem.OpenReference
 
 import scala.collection.mutable
+import scala.util.{Failure, Success, Try}
 
 
 
@@ -19,6 +20,16 @@ object sem {
   // these are some normal forms, such that you need to apply to go on?
   // these are normal forms?
   sealed abstract class Value {
+
+
+    def isType = force(this) match { // TODO
+      case _: Pi => true
+      case _: Sum => true
+      case _: Sigma => true
+      case _: Universe => true
+      case _ => false
+    }
+
     def :<:(o: Value): Boolean = {
       if (this == o) {
         true
@@ -39,6 +50,13 @@ object sem {
           case (a, sem.Fix(t)) =>
             val k = Seq(OpenReference(0, 0))
             a :<: t(k)
+          case (GlobalReference(g1), GlobalReference(g2)) =>
+            if (g1 == g2) true
+            else sem.global(g1).svalue :<: sem.global(g2).svalue
+          case (GlobalReference(g1), g2) =>
+            sem.global(g1).svalue :<: g2
+          case (g1, GlobalReference(g2)) =>
+            g1 :<: sem.global(g2).svalue
           case (sem.Sigma(ms0, ts0), sem.Sigma(ms1, ts1)) => // assuming nat <: integer we have sigma[@a nat, @b type] <: [@a integer]
             if (ms1.startsWith(ms0)) { // TODO advanced subtyping for records
               val ids = ms1.indices.map(i => OpenReference(0, i))
@@ -254,9 +272,13 @@ object sem {
       case f@sem.Fix(k) => k(Seq(f))
       case a => a
     }
-    var t = loop(v)
-    while (t != v) t = loop(t)
-    t
+    var p = v
+    var n = loop(p)
+    while (n != p) {
+      p = n
+      n = loop(p)
+    }
+    n
   }
 
   object names {
@@ -328,7 +350,6 @@ trait Normalization extends UtilsCommon {
     }
   }
 
-  val twitterEval = new Eval()
 
   // needs to ensure term is well typed first!
   def eval(term: Term, debugText: Boolean = false): Value = {
@@ -381,17 +402,20 @@ trait Normalization extends UtilsCommon {
       case GlobalReference(str) => sem.GlobalReference(str)
       case _ =>
         val text = emitScala(term, -1)
-        if (Debug && debugText) delog("\t" + text)
+        if (DebugNbe && debugText) delog("\t" + text)
+        val twitterEval = new Eval()
         twitterEval.apply[Value](text)
     }
   }
 
+  val DebugNbe = Debug && false
+
 
   def nbe(t: Term) = {
-    if (Debug) delog("NbE: " + t)
+    if (DebugNbe) delog("NbE: " + t)
     val e = eval(t, debugText = true)
     val rb = readback(e)
-    if (Debug) delog("\t" + rb)
+    if (DebugNbe) delog("\t" + rb)
     rb
   }
 
@@ -408,6 +432,13 @@ trait TypeCheck extends Normalization {
 
   val inferCache = mutable.Map.empty[Term, Value]
 
+  var debuggingInferCheck = false
+  var level = 0
+
+  val str = "                                                                                                           "
+
+  def lstr(): String = str.take(level * 2)
+
   // local typing context
   // the context is so that the head is index 0
   case class Context(ctx: Seq[Seq[Value]]) {
@@ -418,49 +449,57 @@ trait TypeCheck extends Normalization {
 
     def el(s: Seq[Value]) = this.copy(ctx = s +: ctx)
 
+
     // new small index
-    def es(v: Value) = this.copy(ctx = (ctx.head :+ v) +: ctx.tail)
+    def es(v: Value) = this.copy(ctx = (ctx.head :+ force(v)) +: ctx.tail)
 
     def local(l: LocalReference): Value = ctx(l.big)(l.small)
 
 
     // return the type of a term in semantics world
-    def infer(term: Term, debugCheck: Boolean = true): Value = {
+    def infer(term: Term, fromCheck: Boolean = false): Value = {
+      term match {
+        case GlobalReference(g) =>
+          val res = sem.global(g).stype // early return!!!
+          if (Debug && !debuggingInferCheck) delog(lstr() + "Inferred. global reference " + term)
+          return res  // ALERT: early return!!!
+        case _ => Unit // drop out
+      }
       val termClosed = term.closed()
       if (termClosed) {
         inferCache.get(term) match {
           case Some(a) =>
-            if (Debug && debugCheck) delog("Infer. Cache hit for closed term " + term)
+            if (Debug && !debuggingInferCheck) delog(lstr() + "Inferred. Cache hit for closed term " + term)
             return a // ALERT: early return!!!
           case _ => Unit
         }
       }
+      if (!debuggingInferCheck) {
+        delog(lstr() + "Inferring " + term + ". Context: " + ctx.reverse.map(a => a.map(k => readback(k)).mkString(" __ ")).mkString(" || "))
+        level += 1
+      }
       def checkLambdaArgs(is: Seq[Option[Term]]): Context = {
         assert(is.forall(a => a.nonEmpty))
         is.map(_.get).foldLeft(el()) { (c, p) =>
-          c.checkIsType(p)
-          c.es(eval(p))
+          c.es(c.checkIsTypeThenEval(p))
         }
       }
       val res = term match {
-        case g: GlobalReference => global(g).stype
+        case g: GlobalReference => throw new IllegalStateException("Should be short cut")
         case l: LocalReference => local(l)
         case Fix(t) =>
           t.head match {
             case Ascription(tt, ty) =>
-              checkIsType(ty)
-              el().es(eval(ty)).infer(tt)
+              el().es(checkIsTypeThenEval(ty)).infer(tt)
             case Lambda(is, Ascription(tt, ty)) =>
               val c = checkLambdaArgs(is)
-              c.checkIsType(ty)
-              val vty = eval(ty)
-              c.check(tt, eval(ty))
+              val vty = c.checkIsTypeThenEval(ty)
+              c.check(tt, vty)
               eval(Pi(c.head.map(a => readback(a)), readback(vty)))
             case _ => throw new Exception("Cannot infer Fix")
           }
         case Ascription(left, right) =>
-          checkIsType(right)
-          val r = eval(right)
+          val r = checkIsTypeThenEval(right)
           check(left, r)
           r
 
@@ -477,14 +516,14 @@ trait TypeCheck extends Normalization {
               var i = 0
               var confirmed = Seq.empty[Value]
               while (i < size) { // check i-th type
-                confirmed ++ (i until size).map(_ => sem.DebugPoison())
-                val applied = inside(confirmed)
+                val test = confirmed ++ (i until size).map(_ => sem.DebugPoison())
+                val applied = inside(test)
                 val expected = applied._1(i) // it should NOT contain any new open variables...
                 if (Debug) {
                   readback(expected)
                 }
                 check(rs(i), expected)
-                confirmed = confirmed :+ expected
+                confirmed = confirmed :+ eval(rs(i))
                 i += 1
               }
               inside(confirmed)._2
@@ -517,22 +556,40 @@ trait TypeCheck extends Normalization {
             case _ => throw new Exception("Cannot infer Split")
           }
         case a: Pi =>
+          val j = a.is.foldLeft(el()) { (c, t) =>
+            val k = c.infer(t)
+            assert(k.isType)
+            c.es(k)
+          }.infer(a.to)
+          assert(j.isType)
           sem.Universe()
         case a: Sum =>
-          checkIsType(a)
+          assert(a.ts.values.forall(k => infer(k).isType))
           sem.Universe()
         case a: Sigma =>
-          checkIsType(a)
+          a.ts.foldLeft(el()) { (c, t) =>
+            val k = c.infer(t)
+            assert(k.isType)
+            c.es(k)
+          }
           sem.Universe()
         case Universe() =>
           sem.Universe()
       }
-      if (termClosed) inferCache.put(term, res)
-      if (debugCheck && Debug) {
-        delog("Infer. Context:\n\t" + ctx.reverse.map(a => a.map(k => readback(k)).mkString(" __ ")).mkString("\n\t") + "\nTerm:\n\t" + term + "\nType:\n\t" + readback(res))
-        check(term, res, debugCheck = false)
+      val forced = force(res)
+      if (termClosed) inferCache.put(term, forced)
+      if (!debuggingInferCheck) {
+        level -= 1
+        if (Debug) {
+          delog(lstr() + "Inferred: " + readback(forced))
+          if (!fromCheck) {
+            debuggingInferCheck = true
+            check(term, forced)
+            debuggingInferCheck = false
+          }
+        }
       }
-      res
+      forced
     }
 
 
@@ -545,12 +602,33 @@ trait TypeCheck extends Normalization {
     // you can see that the check is basically used by
     // function application.....
     // and fix..................
-    def check(term: Term, ty: Value, debugCheck: Boolean = true): Unit = {
-      (term, force(ty)) match {
-        case (Lambda(is, body), sem.Pi(size, inside)) =>
+    def check(term: Term, ty0: Value): Unit = {
+      val ty = force(ty0)
+      term match {
+        case GlobalReference(g) =>
+          assert(sem.global(g).stype :<: ty) // early return!!!
+          delog(lstr() + "Checked global reference " + term + " with " + readback(ty))
+          return
+        case _ => Unit // drop out
+      }
+      if (term.closed()) {
+        inferCache.get(term) match {
+          case Some(a) =>
+            assert(a :<: ty)
+            if (Debug && !debuggingInferCheck) delog("Checked. Cache hit for closed term " + term + " with " + readback(ty))
+            if (!debuggingInferCheck) return
+          case _ => Unit // ALERT dropout!
+        }
+      }
+      if (!debuggingInferCheck) {
+        delog(lstr() + "Checking " + term + " with " + readback(ty) + ". Context: " + ctx.reverse.map(a => a.map(k => readback(k)).mkString(" __ ")).mkString(" || "))
+        level += 1
+      }
+      (term, ty) match {
+        case (Lambda(is, body), p@sem.Pi(size, inside)) =>
           assert(size == is.size)
           if (is.forall(_.nonEmpty)) {
-            assert(infer(term, debugCheck = false) :<: ty)
+            assert(infer(term, fromCheck = true) :<: p)
           } else if (is.forall(_.isEmpty)) {
             val t = inside(is.indices.map(a => OpenReference(0, a)))
             el(t._1).check(body, t._2)
@@ -563,21 +641,24 @@ trait TypeCheck extends Normalization {
           var i = 0
           var confirmed = Seq.empty[Value]
           while (i < size) { // check i-th type
-            confirmed ++ (i until size).map(_ => sem.DebugPoison())
-            val applied = ts0(confirmed)
+            val test = confirmed ++ (i until size).map(_ => sem.DebugPoison())
+            val applied = ts0(test)
             val expected = applied(i) // it should NOT contain any new open variables...
             if (Debug) {
               readback(expected)
             }
             check(ts(i), expected)
-            confirmed = confirmed :+ expected
+            confirmed = confirmed :+ eval(ts(i))
             i += 1
           }
         case (e, t) =>
-          if (debugCheck) assert(infer(e, debugCheck = false) :<: t)
+          if (!debuggingInferCheck) assert(infer(e, fromCheck = true) :<: t)
       }
-      if (Debug && debugCheck) {
-        delog("Check. Context:\n\t" + ctx.reverse.map(a => a.map(k => readback(k)).mkString(" __ ")).mkString("\n\t") + "\nTerm:\n\t" + term + "\nType:\n\t" + readback(ty))
+      if (!debuggingInferCheck) {
+        level -= 1
+        if (Debug) {
+          delog(lstr() + "Checked.")
+        }
       }
     }
 
@@ -586,6 +667,11 @@ trait TypeCheck extends Normalization {
       case _ => throw new Exception("Check is universe failed")
     }
 
+
+    def checkIsTypeThenEval(t: Term) = {
+      checkIsType(t)
+      eval(t)
+    }
     // no need to go inside check for now
     def checkIsType(t: Term): Unit = assert(infer(t) :<: sem.Universe())
   }
@@ -622,56 +708,131 @@ object tests extends scala.App with TypeCheck {
     case a => a
   }
   def fix(t: Term) = Fix(Seq(t))
-  def abort() = if (2 + 1 == 3) throw new Exception("Abort mission!")
-  def cc(t: Term) = readback(Context.Empty.infer(t))
+  def abort() = {
+    println("")
+    System.out.flush()
+    println("")
+    if (2 + 1 == 3) throw new Exception("Abort mission!")
+  }
+  def eminfer(t: Term) = readback(Context.Empty.infer(t))
+  def emcheck(t: Term, v: Term) = eminfer(Ascription(t, v))
 
-  val u = Universe()
-  assert(nbe(u) == u)
-  assert(cc(u) == u)
+  def fails(a: => Unit) = {
+    Try(a) match {
+      case Success(_) => throw new Exception()
+      case Failure(_) => Unit
+    }
+  }
+
+  def eqs(a: Term, b: Term) = assert(a == b)
+
+
+  def debugDefine(name: String, a: Term, ty: Term, nf: Term = null, isCheck: Boolean = false): Term = {
+    println("### Defining " + name + ". Assert ty is type")
+    assert(Context.Empty.infer(ty).isType)
+    println("### Assert a is of type ty")
+    emcheck(a, ty)
+
+//    println("### Assert normal forms is correct")
+//    if (nf != null) assert(nbe(a) == nf)
+//    else assert(nbe(a) == tps(a))
+//    assert(nbe(ty) == tps(ty))
+
+    sem.addGlobal(name, sem.Global(eval(a), eval(ty)))
+    val res = GlobalReference(name)
+    println("### End defining " + name + "\n\n")
+    res
+  }
+
+  def debugVal(a: Term): Value = {
+    a match {
+      case GlobalReference(k) => sem.global(k).svalue
+      case _ => throw new Exception("")
+    }
+  }
+
+  Debug = false
+
+
+  val u = debugDefine("u",
+    Universe(),
+    Universe()
+  )
 
   // \(x : type, y: x, z: x) => x
-  val t1 = lam(u, r(0, 0), r(0, 0), r(0, 0))
-  assert(nbe(t1) == tps(t1))
-  assert(cc(t1) == pi(u, r(0, 0), r(0, 0), u))
+  val t1 = debugDefine("t1",
+    lam(u, r(0, 0), r(0, 0), r(0, 0)),
+    pi(u, r(0, 0), r(0, 0), u)
+  )
 
-  abort()
 
   // record[]
-  val unit = Sigma(Seq.empty, Seq.empty)
-  assert(nbe(unit) == unit)
+  val unit = debugDefine("unit",
+    Sigma(Seq.empty, Seq.empty),
+    u
+  )
 
-  val unit0 = Record(Seq.empty, Seq.empty)
-  assert(nbe(unit0) == unit0)
+  val unit0 = debugDefine("unit0",
+    Record(Seq.empty, Seq.empty),
+    unit,
+    isCheck = true
+  )
 
   // \(a: type, x: a) => x
-  val id = lam(u, r(0, 0), r(0, 1))
-  assert(nbe(id) == tps(id))
-  assert(nbe(a(id, u, unit)) == unit)
+  val id = debugDefine("id",
+    lam(u, r(0, 0), r(0, 1)),
+    pi(u, r(0, 0), r(0, 0))
+  )
+
+  val a_id_u_unit = debugDefine("a_id_u_unit",
+    a(id, u, unit),
+    u,
+    nf = unit
+  )
+
+  val a_id_unit_unit0 = debugDefine("a_id_unit_unit0",
+    a(id, unit, unit0),
+    unit,
+    nf = unit0
+  )
+
+  val idc = debugDefine("idc",
+    lam(u, lam(r(1, 0), r(0, 0))),
+    pi(u, pi(r(1, 0), r(1, 0)))
+  )
+
+  val a_idc_u_unit = debugDefine("a_idc_u_unit",
+    a(a(idc, u), unit),
+    u,
+    nf = unit
+  )
+
+  val a_idc_unit_unit0 = debugDefine("a_idc_unit_unit0",
+    a(a(idc, unit), unit0),
+    unit,
+    nf = unit0
+  )
 
 
-  val type_id = pi(u, r(0, 0), r(0, 0))
-  assert(nbe(type_id) == type_id)
-  assert(cc(id) == type_id)
 
 
-  // \(a: type) => (x: a) => x
-  val idc = lam(u, lam(r(1, 0), r(0, 0)))
-  assert(nbe(a(id, u, unit)) == nbe(a(a(idc, u), unit)))
+  val id_u = debugDefine("id_u",
+    lam(u, r(0, 0)),
+    pi(u, u)
+  )
 
-  val type_idc = pi(u, pi(r(1, 0), r(1, 0)))
-  assert(nbe(type_idc) == type_idc)
-
-  assert(readback(Context.Empty.infer(idc)) == type_idc)
+  assert(readback(debugVal(id_u)) == nbe(lam(u, a(id, u, r(0, 0)))))
 
 
-  val id_u = lam(u, r(0, 0))
-  val app_id_u = lam(u, a(id, u, r(0, 0)))
-  assert(nbe(id_u) == nbe(app_id_u))
 
+  Debug = true
   // \(x: type, f: x -> x, a: x) => f (f a)
-  val double = lam(u, pi(r(1, 0), r(1, 0)), r(0, 0), a(r(0, 1), a(r(0, 1), r(0, 2))))
-  assert(nbe(double) == tps(double))
-  //assert(a(double, unit, ))
+  val double = debugDefine("double",
+    lam(u, pi(r(1, 0), r(1, 0)), r(0, 0), a(r(0, 1), a(r(0, 1), r(0, 2)))),
+    pi(u, pi(r(1, 0), r(1, 0)), r(0, 0), r(0, 0))
+  )
+
+  abort()
 
   // fix self => sum(zero: unit, succ: self)
   val num = fix(Sum(Map("zero" -> unit, "succ" -> r(0, 0))))

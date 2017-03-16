@@ -63,9 +63,11 @@ case class Lambda(is: Seq[Option[Term]], body: Term) extends Term {
 }
 case class Pi(is: Seq[Term], to: Term) extends Term {
   override def closed0(): Int = (is.map(_.closedRemember()) :+ to.closedRemember()).max - 1
+  override def toString = s"pi(${is.mkString(", ")} => $to)"
 }
 case class App(left: Term, right: Seq[Term]) extends Term {
   override def closed0(): Int = (left.closedRemember() +: right.map(_.closedRemember())).max
+  override def toString = s"app($left, ${right.mkString(", ")})"
 }
 
 case class Let(vs: Seq[Term], body: Term) extends Term {
@@ -75,8 +77,8 @@ case class Let(vs: Seq[Term], body: Term) extends Term {
 
 case class Record(ms: Seq[String], ts: Seq[Term]) extends Term {
   assert(ms.size == ts.size)
-
   override def closed0(): Int = if (ts.isEmpty) -1 else ts.map(_.closedRemember()).max
+  override def toString = s"record[${ms.zip(ts).map(a => a._1 + " @ " + a._2).mkString(", ")}]"
 }
 
 // assume we have a acyclic directed graph, each node is labeled with a string, we can normalize it like this:
@@ -90,6 +92,8 @@ case class Sigma(ms: Seq[String], ts: Seq[Term]) extends Term {
   def normalized(): Boolean = true // TODO
 
   override def closed0(): Int = if (ts.isEmpty) -1 else ts.map(_.closedRemember()).max - 1
+
+  override def toString = s"sigma[${ms.zip(ts).map(a => a._1 + " @ " + a._2).mkString(", ")}]"
 }
 case class Projection(left: Term, right: String) extends Term {
   override def closed0(): Int = left.closedRemember()

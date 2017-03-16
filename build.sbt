@@ -37,6 +37,7 @@ lazy val sharedSettings: Seq[Def.Setting[_]] = Seq(
   ),
   libraryDependencies ++= Seq(
     "com.lihaoyi" %% "upickle" % "0.4.3",
+    "com.lihaoyi" %% "sourcecode" % "0.1.3",
     "com.twitter" %% "util-eval" % "6.42.0"
   ),
   cancelable := true,
