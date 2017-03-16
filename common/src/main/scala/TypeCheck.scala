@@ -13,6 +13,14 @@ import scala.util.{Failure, Success, Try}
 // https://github.com/coq/coq/blob/d02c9c566c58e566a1453827038f2b49b695c0a5/kernel/nativelib.ml#L78
 // https://github.com/coq/coq/blob/trunk/kernel/nativecode.ml#L1597
 // but I don't know the sharing of global definitions and runtime etc. is possible
+
+object lllevel {
+  var level = 0
+  val str = "                                                                                                           "
+  def lstr(): String = str.take(level * 2)
+}; import lllevel._
+
+
 object sem {
 
   val Bottom = Sum(Map.empty)
@@ -199,8 +207,8 @@ object sem {
   }
 
 
-  abstract class Special extends Value
-  abstract class Lazy extends Value
+  sealed abstract class Special extends Value
+  sealed abstract class Lazy extends Value
 
   case class DebugPoison() extends Special
 
@@ -309,19 +317,21 @@ object sem {
     def emitScala(s: String, ty: Char = ' ') = s"sem.names.lookup(${register(s, ty)})"
   }
 
+
 }
 
 import sem.Value
 
 trait Normalization extends UtilsCommon {
 
-  def readback(v: Value, ctx: Seq[Seq[(String, Value)]]): Term = {
+  def readback(v: Value, ctx: Seq[Seq[(String, Value)]], debugForceFullValue: Boolean = false): Term = {
     def rec(v: Value, depth: Int): Term = {
       val nd = depth + 1
       val ccc = -nd - 1
       v match {
         case sem.GlobalReference(n) =>
-          GlobalReference(n)
+          if (debugForceFullValue) rec(sem.global(n).svalue, 0)
+          else GlobalReference(n)
         case sem.Generic(g) =>
           for (i <- ctx.indices) {
             val cs = ctx(i)
@@ -432,9 +442,13 @@ trait Normalization extends UtilsCommon {
       case Universe() => sem.Universe()
       case GlobalReference(str) => sem.GlobalReference(str)
       case _ =>
+        var time = 0L
+        var timeEmitted = 0L
+        if (Debug) time = System.currentTimeMillis()
         val text = emitScala(term, -1)
-        if (DebugNbe && debugText) delog("\t" + text)
+        if (Debug) timeEmitted = System.currentTimeMillis() - time
         val twitterEval = new Eval()
+        if (Debug) delog(lstr() + "Emitted in " + timeEmitted + ". Compiled in " + (System.currentTimeMillis() - time - timeEmitted) + ". " + text)
         twitterEval.apply[Value](text)
     }
   }
@@ -464,11 +478,6 @@ trait TypeCheck extends Normalization {
   val inferCache = mutable.Map.empty[Term, Value]
 
   var debuggingInferCheck = false
-  var level = 0
-
-  val str = "                                                                                                           "
-
-  def lstr(): String = str.take(level * 2)
 
   // local typing context
   // the context is so that the head is index 0
@@ -482,11 +491,20 @@ trait TypeCheck extends Normalization {
 
 
     // new small index
-    def es(v: Value) = this.copy(ctx = (ctx.head :+ (sem.Generic().name, v)) +: ctx.tail)
+    def es(v: Value) = {
+      val pair = (sem.Generic().name, v)
+      this.copy(ctx = (ctx.head :+ pair) +: ctx.tail)
+    }
 
     def local(l: LocalReference): Value = ctx(l.big)(l.small)._2
 
 
+    def checkLambdaArgs(is: Seq[Option[Term]]): Context = {
+      assert(is.forall(a => a.nonEmpty))
+      is.map(_.get).foldLeft(el()) { (c, p) =>
+        c.es(c.checkIsTypeThenEval(p))
+      }
+    }
     // return the type of a term in semantics world
     def infer(term: Term, fromCheck: Boolean = false): Value = {
       term match {
@@ -509,31 +527,34 @@ trait TypeCheck extends Normalization {
         delog(lstr() + "Inferring " + term + ". Context: " + ctx.reverse.map(a => a.map(k => k._1 +":" + readback(k._2, ctx)).mkString(" __ ")).mkString(" || "))
         level += 1
       }
-      def checkLambdaArgs(is: Seq[Option[Term]]): Context = {
-        assert(is.forall(a => a.nonEmpty))
-        is.map(_.get).foldLeft(el()) { (c, p) =>
-          c.es(c.checkIsTypeThenEval(p))
-        }
-      }
       val res = term match {
         case g: GlobalReference => throw new IllegalStateException("Should be short cut")
         case l: LocalReference => local(l)
         case Fix(t) =>
-          def checkFixType(a: Term) = el().es(sem.Universe()).infer(a)
+          def checkFixType(a: Term) = {
+            el().es(sem.Universe()).checkIsType(a)
+          }
           t.head match {
             case Ascription(tt, ty) =>
               el().es(checkIsTypeThenEval(ty)).infer(tt)
             case Lambda(is, Ascription(tt, ty)) =>
-              val c = checkLambdaArgs(is)
+              val k = el()
+              val c = k.checkLambdaArgs(is)
               val vty = c.checkIsTypeThenEval(ty)
-              c.check(tt, vty)
-              eval(Pi(c.head.map(a => readback(a, c.ctx)), readback(vty, c.ctx)), ctx)
+              val ttt = eval(Pi(c.head.map(a => readback(a, c.ctx)), readback(vty, c.ctx)), ctx)
+              val kf = k.es(ttt)
+              val kff = kf.copy(ctx = c.ctx.head +: kf.ctx)
+              kff.check(tt, vty)
+              ttt
             case a: Sum =>
               checkFixType(a)
+              sem.Universe()
             case a: Pi =>
               checkFixType(a)
+              sem.Universe()
             case a: Sigma =>
               checkFixType(a)
+              sem.Universe()
             case _ => throw new Exception("Cannot infer Fix")
           }
         case Ascription(left, right) =>
@@ -776,9 +797,9 @@ object tests extends scala.App with TypeCheck {
     res
   }
 
-  def debugVal(a: Term): Value = {
+  def fff(a: Term): Term = {
     a match {
-      case GlobalReference(k) => sem.global(k).svalue
+      case GlobalReference(k) => readback(sem.global(k).svalue, Seq.empty, debugForceFullValue = true)
       case _ => throw new Exception("")
     }
   }
@@ -854,7 +875,7 @@ object tests extends scala.App with TypeCheck {
     pi(u, u)
   )
 
-  assert(readback(debugVal(id_u), Seq.empty) == nbe(lam(u, a(id, u, r(0, 0)))))
+  assert(fff(id_u) == nbe(lam(u, a(id, u, r(0, 0)))))
 
 
 
@@ -905,36 +926,43 @@ object tests extends scala.App with TypeCheck {
     pi(num, num)
   )
 
-  abort()
 
   assert((n0t16 ++ Seq(succ)).forall(a => nbe(a) == tps(a)))
 
-  assert(nbe(a(succ, n1)) == n2)
-  assert(nbe(a(succ, n2)) == n3)
-  assert(nbe(a(succ, n3)) == n4)
-  assert(nbe(a(succ, n4)) == n5)
-  assert(nbe(a(succ, n5)) == n6)
-  assert(nbe(a(succ, a(succ, n1))) == n3)
-  assert(nbe(a(succ, a(succ, n2))) == n4)
-  assert(nbe(a(succ, a(succ, n3))) == n5)
-  assert(nbe(a(succ, a(succ, n4))) == n6)
+  assert(nbe(a(succ, fff(n1))) == fff(n2))
+  assert(nbe(a(succ, fff(n2))) == fff(n3))
+  assert(nbe(a(succ, fff(n3))) == fff(n4))
+  assert(nbe(a(succ, fff(n4))) == fff(n5))
+  assert(nbe(a(succ, fff(n5))) == fff(n6))
+  assert(nbe(a(succ, a(succ, fff(n1)))) == fff(n3))
+  assert(nbe(a(succ, a(succ, fff(n2)))) == fff(n4))
+  assert(nbe(a(succ, a(succ, fff(n3)))) == fff(n5))
+  assert(nbe(a(succ, a(succ, fff(n4)))) == fff(n6))
+
+
+
+  val pair = debugDefine("pair",
+    lam(u, u, Sigma(Seq("_1", "_2"), Seq(r(1, 0), r(1, 1)))),
+    pi(u, u, u)
+  )
+
+  assert(nbe(a(pair, num, num)) == Sigma(Seq("_1", "_2"), Seq(num, num)))
+
+
+  // fix self => (a, b: nat) => split a { case zero => b; case succ k => succ(self k b) }
+  val plus = debugDefine("plus",
+    fix(lam(num, num, Ascription(Split(r(0, 0), Map("zero" -> r(1, 1), "succ" -> Construct("succ", a(r(2, 0), r(0, 0), r(1, 1))))), num))),
+    pi(num, num, num)
+  )
 
   abort()
 
-  val pair = lam(u, u, Sigma(Seq("_1", "_2"), Seq(r(1, 0), r(1, 1))))
-  val pair_num_num = Sigma(Seq("_1", "_2"), Seq(num, num))
-  assert(nbe(pair) == tps(pair))
-  def mk_pair(seq: Term*) = Record(Seq("_1", "_2"), seq)
-  assert(nbe(a(pair, num, num)) == pair_num_num)
-
-  // fix self => (a, b: nat) => split a { case zero => b; case succ k => succ(self k b) }
-  val plus = fix(lam(num, num, Split(r(0, 0), Map("zero" -> r(1, 1), "succ" -> Construct("succ", a(r(2, 0), r(0, 0), r(1, 1)))))))
   // fix self => (a, b: nat) => split a { case zero => b; case succ k => succ(self b k) }
-  val plus1 = fix(lam(num, num, Split(r(0, 0), Map("zero" -> r(1, 1), "succ" -> Construct("succ", a(r(2, 0), r(1, 1), r(0, 0)))))))
+  val plus1 = fix(lam(num, num, Ascription(Split(r(0, 0), Map("zero" -> r(1, 1), "succ" -> Construct("succ", a(r(2, 0), r(1, 1), r(0, 0))))), num)))
   // fix self => (b, a: nat) => split a { case zero => b; case succ k => succ(self k b) }
-  val plus2 = fix(lam(num, num, Split(r(0, 1), Map("zero" -> r(1, 0), "succ" -> Construct("succ", a(r(2, 0), r(0, 0), r(1, 0)))))))
+  val plus2 = fix(lam(num, num, Ascription(Split(r(0, 1), Map("zero" -> r(1, 0), "succ" -> Construct("succ", a(r(2, 0), r(0, 0), r(1, 0))))), num)))
   // fix self => (b, a: nat) => split a { case zero => b; case succ k => succ(self b k) }
-  val plus3 = fix(lam(num, num, Split(r(0, 1), Map("zero" -> r(1, 0), "succ" -> Construct("succ", a(r(2, 0), r(1, 0), r(0, 0)))))))
+  val plus3 = fix(lam(num, num, Ascription(Split(r(0, 1), Map("zero" -> r(1, 0), "succ" -> Construct("succ", a(r(2, 0), r(1, 0), r(0, 0))))), num)))
   assert(nbe(plus) == tps(plus))
 
   for (i <- 0 to 16) {
