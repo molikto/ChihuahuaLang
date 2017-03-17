@@ -14,14 +14,15 @@ import scala.util.{Failure, Success, Try}
 // https://github.com/coq/coq/blob/trunk/kernel/nativecode.ml#L1597
 // but I don't know the sharing of global definitions and runtime etc. is possible
 
-object debugLevel {
+object debugLevel extends  UtilsCommon {
   var level = 0
   val lllstr = "                                                                                                           "
   def lstr(): String = lllstr.take(level * 2)
+  var debuggingInferCheck = false
 }; import debugLevel._
 
 
-object sem extends UtilsCommon {
+object sem {
 
   val Bottom = Sum(Map.empty)
   // these are some normal forms, such that you need to apply to go on?
@@ -35,6 +36,7 @@ object sem extends UtilsCommon {
   sealed abstract class Value {
 
     def subtypeOf(o: Value): Boolean = {
+      if (Debug && !debuggingInferCheck) delog(lstr() + "subtype called...")
       if (this == o) {
         return true
       }
@@ -182,17 +184,6 @@ object sem extends UtilsCommon {
     seq.tail.fold(seq.head) { (v0, v1) => v0 :/\: v1}
   }
 
-
-  // things shouldn't really exists in semantics world
-  sealed abstract class NonExists extends Value {
-    override def subtypeOf(o: Value) = throw new IllegalStateException()
-    override def :/\:(o: Value) = throw new IllegalStateException()
-    override def :\/:(o: Value) = throw new IllegalStateException()
-  }
-
-  case class DebugPoison() extends NonExists
-
-
   // these are where stuck state starts
   sealed abstract class Stuck extends Value {
     override def app(seq: Value): Value = App(this, seq)
@@ -238,9 +229,10 @@ object sem extends UtilsCommon {
     n
   }
 
-  // only used in readback immediately, it shouldn't really exists in semantic world
-  // so all methods throw a exception
-  case class OpenReference(depth: Int) extends NonExists
+  // ... it cannot be a because consider when you read back the
+  // lam a: (x: type, y: x) => a.y
+  // so it needs to be a stuck term
+  case class OpenReference(depth: Int) extends Stuck
 
   // we DON'T really support reading REALLY open references, because their semantics is not complete
   // all "open" reference in term lang, will be turn into some Generic inside the semantics world
@@ -317,7 +309,7 @@ object sem extends UtilsCommon {
 import sem.Value
 import sem.TypingCtx
 
-trait Normalization extends UtilsCommon {
+trait Normalization {
 
   def readback(v: Value, ctx: TypingCtx, testOnlyForceFullValue: Boolean = false, isDebug: Boolean = false): Term = {
     def rec(v: Value, depth: Int): Term = {
@@ -369,7 +361,6 @@ trait Normalization extends UtilsCommon {
         case sem.Sum(ts) =>
           Sum(ts.mapValues(c => rec(c, depth)))
         case sem.Universe() => Universe()
-        case sem.DebugPoison() => throw new Exception("I am poisoned!")
       }
     }
     val res = rec(v, -1)
@@ -380,6 +371,7 @@ trait Normalization extends UtilsCommon {
 
   // needs to ensure term is well typed first!
   def eval(term: Term, ctx: TypingCtx): Value = {
+    // TODO eval cache for closed terms...
     def emitScala(t: Term, depth: Int): String = {
       t match {
         case GlobalReference(str) =>
@@ -449,10 +441,10 @@ trait Normalization extends UtilsCommon {
   }
 
   val DebugNbe = Debug && false
-  def nbe(t: Term) = {
+  def nbe(t: Term, testOnlyForceFullValue: Boolean = false) = {
     if (DebugNbe) delog("NbE: " + t)
     val e = eval(t, Seq.empty)
-    val rb = readback(e, Seq.empty)
+    val rb = readback(e, Seq.empty, testOnlyForceFullValue = testOnlyForceFullValue)
     if (DebugNbe) delog("\t" + rb)
     rb
   }
@@ -468,7 +460,6 @@ trait TypeCheck extends Normalization {
 
   val closedTermMinimalTypeCache = mutable.Map.empty[Term, Value]
 
-  var debuggingInferCheck = false
 
   // local typing context
   // the context is so that the head is index 0
@@ -476,10 +467,10 @@ trait TypeCheck extends Normalization {
 
     def expand(v: Value) = {
       val pair = (sem.Generic().name, v)
-      this.copy(ctx = pair +: ctx.tail)
+      this.copy(ctx = pair +: ctx)
     }
 
-    def expand(pair: (String, Value)) = this.copy(ctx = pair +: ctx.tail)
+    def expand(pair: (String, Value)) = this.copy(ctx = pair +: ctx)
 
     def head: (String, Value) = ctx.head
 
@@ -505,7 +496,7 @@ trait TypeCheck extends Normalization {
           case _ => Unit
         }
       }
-      if (!debuggingInferCheck) {
+      if (Debug && !debuggingInferCheck) {
         delog(lstr() + "Inferring " + term + ". Context: " + debugContextStr())
         level += 1
       }
@@ -547,7 +538,7 @@ trait TypeCheck extends Normalization {
           val pty = checkIsTypeAndEval(is)
           val ct = expand(pty)
           val vty = ct.infer(body)
-          eval(Pi(readback(pty, ctx), readback(vty, ct.ctx)), ctx)
+          eval(Pi(readback(pty, ctx), readback(vty, ct.ctx)), ctx) // TODO make ways to NOT readback the first one, only the second one
         case Lambda(None, _) => throw new Exception("Cannot infer lambda without parameter types")
         case App(l, rs) =>
           force(infer(l)) match {
@@ -568,8 +559,10 @@ trait TypeCheck extends Normalization {
               val index = ms.indexOf(right)
               // in this sigma, their is NO mutual reference
               var i: sem.Srh = ts
-              while (index > 0) {
-                i = i.f(sem.DebugPoison())
+              var k = 0
+              while (k < index) {
+                i = i.f(eval(left, ctx).projection(ms(k)))
+                k += 1
               }
               i.t
             case _ => throw new Exception("Cannot infer Projection")
@@ -603,15 +596,13 @@ trait TypeCheck extends Normalization {
           sem.Universe()
       }
       if (termClosed) closedTermMinimalTypeCache.put(term, res)
-      if (!debuggingInferCheck) {
+      if (Debug && !debuggingInferCheck) {
         level -= 1
-        if (Debug) {
-          delog(lstr() + "Inferred: " + readback(res, ctx, isDebug = true))
-          if (!debugFromCheck) {
-            debuggingInferCheck = true
-            check(term, res)
-            debuggingInferCheck = false
-          }
+        delog(lstr() + "Inferred: " + readback(res, ctx, isDebug = true))
+        if (!debugFromCheck) {
+          debuggingInferCheck = true
+          check(term, res)
+          debuggingInferCheck = false
         }
       }
       res
@@ -645,7 +636,7 @@ trait TypeCheck extends Normalization {
           case _ => Unit // ALERT dropout!
         }
       }
-      if (!debuggingInferCheck) {
+      if (Debug && !debuggingInferCheck) {
         delog(lstr() + "Checking " + term + " with " + readback(ty, ctx, isDebug = true) + ". Context: " + debugContextStr())
         level += 1
       }
@@ -672,11 +663,9 @@ trait TypeCheck extends Normalization {
         case (e, t) =>
           if (!debuggingInferCheck) assert(infer(e, debugFromCheck = true) subtypeOf t)
       }
-      if (!debuggingInferCheck) {
+      if (Debug && !debuggingInferCheck) {
         level -= 1
-        if (Debug) {
-          delog(lstr() + "Checked.")
-        }
+        delog(lstr() + "Checked.")
       }
     }
 
@@ -715,13 +704,13 @@ object tests extends scala.App with TypeCheck {
     else App(t, Record((0 until ts.size).map("_" + _), ts))
   def pi(t: Term*) =
     if (t.isEmpty) throw new Exception("")
-    else if (t.size == 1) Pi(t.head, TermUnit)
+    else if (t.size == 1) Pi(TermUnit, t.head)
     else if (t.size == 2) Pi(t.head, t(1))
     else Pi(Sigma((0 until t.size - 1).map("_" + _), t.dropRight(1)), t.last)
 
   def lam(t: Term*) =
     if (t.isEmpty) throw new Exception("")
-    else if (t.size == 1) Lambda(Some(t.head), TermUnit)
+    else if (t.size == 1) Lambda(Some(TermUnit), t.head)
     else if (t.size == 2) Lambda(Some(t.head), t(1))
     else Lambda(Some(Sigma((0 until t.size - 1).map("_" + _), t.dropRight(1))), t.last)
 
@@ -745,10 +734,12 @@ object tests extends scala.App with TypeCheck {
   def eminfer(t: Term) = readback(Context.Empty.infer(t), Seq.empty, isDebug = true)
   def emcheck(t: Term, v: Term) = eminfer(Ascription(t, v))
 
-  def fails(a: => Unit) = {
-    Try(a) match {
-      case Success(_) => throw new Exception()
-      case Failure(_) => Unit
+  def fails(a: () => Any) = {
+    Try(a()) match {
+      case Success(_) => throw new Exception("Should fail!")
+      case Failure(_) =>
+        level = 0
+        println("\n\nYes!!! It failed!!!!\n\n")
     }
   }
 
@@ -756,9 +747,7 @@ object tests extends scala.App with TypeCheck {
 
 
   def debugDefine(name: String, a: Term, ty: Term, nf: Term = null, isCheck: Boolean = false): Term = {
-    println("### Defining " + name + ". Assert ty is type")
-    Context.Empty.checkIsType(ty)
-    println("### Assert a is of type ty")
+    println("### Defining " + name)
     emcheck(a, ty)
 
 //    println("### Assert normal forms is correct")
@@ -772,21 +761,16 @@ object tests extends scala.App with TypeCheck {
     res
   }
 
-  def fff(a: Term): Term = {
-    a match {
-      case GlobalReference(k) => readback(sem.global(k).svalue, Seq.empty, testOnlyForceFullValue = true, isDebug = true)
-      case _ => throw new Exception("")
-    }
-  }
+  def fff(a: Term): Term = nbe(a, testOnlyForceFullValue = true)
 
   Debug = false
 
-  Debug = true
 
   val u = debugDefine("u",
     Universe(),
     Universe()
   )
+
 
   // \(x : type, y: x, z: x) => x
   val t1 = debugDefine("t1",
@@ -807,11 +791,67 @@ object tests extends scala.App with TypeCheck {
     isCheck = true
   )
 
+  val lam_just_unit = debugDefine("lam_just_unit",
+    lam(unit0),
+    pi(unit)
+  )
+
+  val lam_unit_unit = debugDefine("lam_unit_unit",
+    lam(unit, r(0)),
+    pi(unit, unit)
+  )
+
+  val lam_unit_unit_unit = debugDefine("lam_unit_unit_unit",
+    lam(unit, unit, rr(0, 0)),
+    pi(unit, unit, unit)
+  )
+
+  val lam_unit_unit_unit1 = debugDefine("lam_unit_unit_unit1",
+    lam(unit, unit, rr(0, 1)),
+    pi(unit, unit, unit)
+  )
+
+  val record_unit_unit0_unit0 = debugDefine("record_unit_unit0_unit0",
+    Record(Seq("a", "b", "c"), Seq(unit, unit0, unit0)),
+    Sigma(Seq("a", "b", "c"), Seq(u, unit, unit))
+  )
+
+  val record_unit_unit0_unit0_1 = debugDefine("record_unit_unit0_unit0_1",
+    Record(Seq("a", "b", "c"), Seq(unit, unit0, unit0)),
+    Sigma(Seq("a", "b", "c"), Seq(u, r(0), unit))
+  )
+
+  val record_unit_unit0_unit0_2 = debugDefine("record_unit_unit0_unit0_2",
+    Record(Seq("a", "b", "c"), Seq(unit, unit0, unit0)),
+    Sigma(Seq("a", "b", "c"), Seq(u, unit, r(1)))
+  )
+
+  val record_unit_unit0_unit0_3 = debugDefine("record_unit_unit0_unit0_3",
+    Record(Seq("a", "b", "c"), Seq(unit, unit0, unit0)),
+    Sigma(Seq("a", "b", "c"), Seq(u, r(0), r(1)))
+  )
+
+  fails(() =>
+    debugDefine("fails",
+      Record(Seq("a", "b", "c"), Seq(u, unit0, unit0)),
+      Sigma(Seq("a", "b", "c"), Seq(u, r(0), r(1)))
+    )
+  )
+
+  fails(() =>
+    debugDefine("fails",
+      Record(Seq("a", "b", "c"), Seq(unit, unit, unit0)),
+      Sigma(Seq("a", "b", "c"), Seq(u, r(0), r(1)))
+    )
+  )
+
+
   // \(a: type, x: a) => x
   val id = debugDefine("id",
     lam(u, r(0), rr(0, 1)),
     pi(u, r(0), rr(0, 0))
   )
+
 
   val a_id_u_unit = debugDefine("a_id_u_unit",
     a(id, u, unit),
@@ -825,9 +865,10 @@ object tests extends scala.App with TypeCheck {
     nf = unit0
   )
 
+
   val idc = debugDefine("idc",
-    lam(u, lam(r(1), r(0))),
-    pi(u, pi(r(1), r(1)))
+    lam(u, lam(r(0), r(0))),
+    pi(u, pi(r(0), r(1)))
   )
 
   val a_idc_u_unit = debugDefine("a_idc_u_unit",
@@ -850,7 +891,7 @@ object tests extends scala.App with TypeCheck {
     pi(u, u)
   )
 
-  assert(fff(id_u) == nbe(lam(u, a(id, u, r(0)))))
+  assert(fff(id_u) == fff(lam(u, a(id, u, r(0)))))
 
 
 
@@ -874,6 +915,7 @@ object tests extends scala.App with TypeCheck {
     u
   )
 
+  Debug = true
 
   val n0 = debugDefine("n0", Construct("zero", unit0), num)
   val n1 = debugDefine("n1", Construct("succ", n0), num)
@@ -901,27 +943,24 @@ object tests extends scala.App with TypeCheck {
     pi(num, num)
   )
 
-
-  assert((n0t16 ++ Seq(succ)).forall(a => nbe(a) == tps(a)))
-
-  assert(nbe(a(succ, fff(n1))) == fff(n2))
-  assert(nbe(a(succ, fff(n2))) == fff(n3))
-  assert(nbe(a(succ, fff(n3))) == fff(n4))
-  assert(nbe(a(succ, fff(n4))) == fff(n5))
-  assert(nbe(a(succ, fff(n5))) == fff(n6))
-  assert(nbe(a(succ, a(succ, fff(n1)))) == fff(n3))
-  assert(nbe(a(succ, a(succ, fff(n2)))) == fff(n4))
-  assert(nbe(a(succ, a(succ, fff(n3)))) == fff(n5))
-  assert(nbe(a(succ, a(succ, fff(n4)))) == fff(n6))
+  assert(fff(a(succ, n1)) == fff(n2))
+  assert(fff(a(succ, n2)) == fff(n3))
+  assert(fff(a(succ, n3)) == fff(n4))
+  assert(fff(a(succ, n4)) == fff(n5))
+  assert(fff(a(succ, n5)) == fff(n6))
+  assert(fff(a(succ, a(succ, n1))) == fff(n3))
+  assert(fff(a(succ, a(succ, n2))) == fff(n4))
+  assert(fff(a(succ, a(succ, n3))) == fff(n5))
+  assert(fff(a(succ, a(succ, n4))) == fff(n6))
 
 
 
   val pair = debugDefine("pair",
-    lam(u, u, Sigma(Seq("_0", "_1"), Seq(rr(1, 0), rr(1, 1)))),
+    lam(u, u, Sigma(Seq("_0", "_1"), Seq(rr(0, 0), rr(1, 1)))),
     pi(u, u, u)
   )
 
-  assert(nbe(a(pair, num, num)) == Sigma(Seq("_0", "_1"), Seq(num, num)))
+  assert(fff(a(pair, num, num)) == fff(Sigma(Seq("_0", "_1"), Seq(num, num))))
 
 
   // fix self => (a, b: nat) => split a { case zero => b; case succ k => succ(self k b) }
@@ -930,7 +969,6 @@ object tests extends scala.App with TypeCheck {
     pi(num, num, num)
   )
 
-  abort()
 
   // fix self => (a, b: nat) => split a { case zero => b; case succ k => succ(self b k) }
   val plus1 = debugDefine("plus1",
@@ -943,8 +981,8 @@ object tests extends scala.App with TypeCheck {
   for (i <- 0 to 16) {
     for (j <- 0 to 16) {
       if (i + j <= 16) {
-        assert(nbe(a(plus, n0t16(i), n0t16(j))) == n0t16(i + j))
-        assert(nbe(a(plus1, n0t16(i), n0t16(j))) == n0t16(i + j))
+        assert(fff(a(plus, n0t16(i), n0t16(j))) == fff(n0t16(i + j)))
+        assert(fff(a(plus1, n0t16(i), n0t16(j))) == fff(n0t16(i + j)))
       }
     }
   }
@@ -956,10 +994,11 @@ object tests extends scala.App with TypeCheck {
   for (i <- 0 to 16) {
     for (j <- 0 to 16) {
       if (i * j <= 16) {
-        assert(nbe(a(mult, n0t16(i), n0t16(j))) == n0t16(i * j))
-        assert(nbe(a(mult1, n0t16(i), n0t16(j))) == n0t16(i * j))
+        assert(fff(a(mult, n0t16(i), n0t16(j))) == fff(n0t16(i * j)))
+        assert(fff(a(mult1, n0t16(i), n0t16(j))) == fff(n0t16(i * j)))
       }
     }
   }
 
+  abort()
 }
