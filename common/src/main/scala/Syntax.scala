@@ -65,7 +65,6 @@ case class Ascription(term: Term, ty: Term) extends Term {
 
 case class Lambda(is: Seq[Option[Term]], body: Term) extends Term {
   override def closed0(): Int = (is.flatMap(_.map(_.closedRemember())) :+ body.closedRemember()).max - 1
-
   override def toString = s"lam(${is.map(_.map(_.toString).getOrElse(" ")).mkString(", ")}) => $body"
 }
 case class Pi(is: Seq[Term], to: Term) extends Term {

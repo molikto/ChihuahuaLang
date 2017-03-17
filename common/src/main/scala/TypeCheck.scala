@@ -21,7 +21,7 @@ object debugLevel {
 }; import debugLevel._
 
 
-object sem {
+object sem extends UtilsCommon {
 
   val Bottom = Sum(Map.empty)
   // these are some normal forms, such that you need to apply to go on?
@@ -259,6 +259,7 @@ object sem {
       p = n
       n = loop(p)
     }
+    if (Debug && p != v) delog(lstr() + "forced a value...")
     n
   }
 
