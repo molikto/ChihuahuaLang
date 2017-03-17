@@ -14,12 +14,12 @@ import scala.util.{Failure, Success, Try}
 // https://github.com/coq/coq/blob/trunk/kernel/nativecode.ml#L1597
 // but I don't know the sharing of global definitions and runtime etc. is possible
 
-object debugLevel extends  UtilsCommon {
+object DebugLevel extends  UtilsCommon {
   var level = 0
   val lllstr = "                                                                                                           "
   def lstr(): String = lllstr.take(level * 2)
   var debuggingInferCheck = false
-}; import debugLevel._
+}; import DebugLevel._
 
 
 object sem {
@@ -810,6 +810,15 @@ object tests extends scala.App with TypeCheck {
     lam(unit, unit, rr(0, 1)),
     pi(unit, unit, unit)
   )
+
+  Debug = true
+
+  val silly_app = debugDefine("silly_app",
+    lam(pi(unit, unit), unit, a(Ascription(Lambda(None, a(rr(1, 0), r(0))), pi(unit, unit)), rr(0, 1))),
+    pi(pi(unit, unit), unit, unit)
+  )
+
+  abort()
 
   val record_unit_unit0_unit0 = debugDefine("record_unit_unit0_unit0",
     Record(Seq("a", "b", "c"), Seq(unit, unit0, unit0)),
