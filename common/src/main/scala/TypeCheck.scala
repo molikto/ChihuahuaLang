@@ -435,8 +435,9 @@ trait Normalization {
         val text = emitScala(term, -1)
         if (Debug) timeEmitted = System.currentTimeMillis() - time
         val twitterEval = new Eval()
+        val res = twitterEval.apply[Value](text)
         if (Debug) delog(lstr() + "Emitted in " + timeEmitted + ". Compiled in " + (System.currentTimeMillis() - time - timeEmitted) + ". " + text)
-        twitterEval.apply[Value](text)
+        res
     }
   }
 
