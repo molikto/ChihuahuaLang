@@ -39,12 +39,12 @@ case class GlobalReference(str: String) extends Term {
 // then to find the binding site from the reference, what you do is go up the tree, each time you
 // go to a binding site you minus your reference by -1 or it is the site if you get 0
 // all our binding site
-case class LocalReference(big: Int, small: Int) extends Term {
-  assert(big >= 0 && small >= 0)
+case class LocalReference(big: Int) extends Term {
+  assert(big >= 0)
 
   var debugGeneric: String = ""
 
-  override def toString = if (debugGeneric.isEmpty) s"r($big, $small)" else s"r($big, $small, $debugGeneric)"
+  override def toString = if (debugGeneric.isEmpty) s"r($big)" else s"r($big, $debugGeneric)"
 
   // a local reference itself is never closed...
   override def closed0(): Int = big
@@ -52,10 +52,8 @@ case class LocalReference(big: Int, small: Int) extends Term {
 
 
 
-case class Fix(t: Seq[Term]) extends Term {
-  assert(t.size == 1)
-
-  override def closed0(): Int = t.head.closedRemember() - 1
+case class Fix(t: Term) extends Term {
+  override def closed0(): Int = t.closedRemember() - 1
 }
 
 case class Ascription(term: Term, ty: Term) extends Term {
@@ -63,22 +61,22 @@ case class Ascription(term: Term, ty: Term) extends Term {
 }
 
 
-case class Lambda(is: Seq[Option[Term]], body: Term) extends Term {
-  override def closed0(): Int = (is.flatMap(_.map(_.closedRemember())) :+ body.closedRemember()).max - 1
-  override def toString = s"lam(${is.map(_.map(_.toString).getOrElse(" ")).mkString(", ")}) => $body"
+case class Lambda(is: Option[Term], body: Term) extends Term {
+  override def closed0(): Int = is.map(_.closedRemember()).getOrElse(-1) max (body.closedRemember() - 1)
+  override def toString = s"lam(${is.getOrElse("")}) => $body"
 }
-case class Pi(is: Seq[Term], to: Term) extends Term {
-  override def closed0(): Int = (is.map(_.closedRemember()) :+ to.closedRemember()).max - 1
-  override def toString = s"pi(${is.mkString(", ")} => $to)"
+case class Pi(is: Term, to: Term) extends Term { // only the right is UNDER BINDING...
+  override def closed0(): Int = is.closedRemember max (to.closedRemember() - 1)
+  override def toString = s"pi($is => $to)"
 }
-case class App(left: Term, right: Seq[Term]) extends Term {
-  override def closed0(): Int = (left.closedRemember() +: right.map(_.closedRemember())).max
-  override def toString = s"app($left, ${right.mkString(", ")})"
+case class App(left: Term, right: Term) extends Term {
+  override def closed0(): Int = left.closedRemember() max right.closedRemember()
+  override def toString = s"app($left, $right)"
 }
 
-case class Let(vs: Seq[Term], body: Term) extends Term {
-  override def closed0(): Int = (vs.map(_.closedRemember()) :+ body.closedRemember()).max - 1
-}
+//case class Let(vs: Seq[Term], body: Term) extends Term {
+//  override def closed0(): Int = (vs.map(_.closedRemember()) :+ body.closedRemember()).max - 1
+//}
 
 
 case class Record(ms: Seq[String], ts: Seq[Term]) extends Term {
@@ -92,11 +90,11 @@ case class Record(ms: Seq[String], ts: Seq[Term]) extends Term {
 // second list all labels with dependencies of the first batch, order them in label order
 // ...
 // we will always assume that our Sigma type is of this order...
-case class Sigma(ms: Seq[String], ts: Seq[Term]) extends Term {
+case class Sigma(ms: Seq[String], ts: Seq[Term]) extends Term { // so the left most variable IS NOT closed
   assert(ms.size == ts.size)
   assert(normalized())
   def normalized(): Boolean = true // TODO
-  override def closed0(): Int = if (ts.isEmpty) -1 else ts.map(_.closedRemember()).max - 1
+  override def closed0(): Int = if (ts.isEmpty) -1 else ts.zipWithIndex.map(p => p._1.closedRemember() - p._2).max
   override def toString = s"sigma[${ms.zip(ts).map(a => a._1 + " @ " + a._2).mkString(", ")}]"
 }
 case class Projection(left: Term, right: String) extends Term {
