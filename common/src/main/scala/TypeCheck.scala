@@ -5,6 +5,8 @@ import scala.collection.mutable
 import scala.util.{Failure, Success, Try}
 
 
+// TODO: subtyping
+// TODO: what about this part...??? euqlity type? inductive family? cubicaltt?
 
 // the semantic world, it is not a trait but a object because it is easier to dynamic
 // link the JIT'ed code now
@@ -37,9 +39,7 @@ object sem {
 
     def subtypeOf(o: Value): Boolean = {
       if (Debug && !debuggingInferCheck) delog(lstr() + "subtype called...")
-      if (this == o) {
-        return true
-      }
+      if (this eq o) return true
       (this, o) match {
         case (_, sem.Bottom) =>
           false
@@ -70,7 +70,7 @@ object sem {
           if ((ts.keySet -- ts1.keySet).isEmpty) {
             ts.forall(pair => pair._2 subtypeOf ts1(pair._1))
           } else false
-        case _ => false
+        case (a, b) => a == b
       }
     }
 
@@ -194,6 +194,11 @@ object sem {
     override def app(seq: Value) = t(this).app(seq)
     override def projection(s: String) = t(this).projection(s)
     override def split(bs: Map[String, Value => Value]) = t(this).split(bs)
+
+    override def equals(obj: scala.Any) = obj match {
+      case Fix(tt) => val g = Generic(); t(g) == tt(g)
+      case _ => false
+    }
   }
 
 
@@ -240,12 +245,23 @@ object sem {
   // accumulators
   case class Projection(value: Stuck, str: String) extends Stuck
   case class App(atom: Stuck, app: Value) extends Stuck
-  case class Split(s: Stuck, names:  Map[String, Value => Value]) extends Stuck
+  case class Split(s: Stuck, names:  Map[String, Value => Value]) extends Stuck {
+    override def equals(obj: scala.Any) = obj match {
+      case Split(ss, n) =>
+        ss == s && names.keySet == n.keySet && names.keySet.forall(s => {val g = Generic(); names(s)(g) == n(s)(g)})
+      case _ => false
+    }
+  }
 
 
 
   case class Lambda(fun: Value => Value) extends Value {
     override def app(seq: Value) = fun(seq)
+
+    override def equals(obj: scala.Any) = obj match {
+      case Lambda(f) => val g = Generic(); fun(g) == f(g)
+      case _ => false
+    }
   }
   case class Construct(name: String, apps: Value) extends Value {
     override def split(bs: Map[String, Value => Value]) = bs(name)(apps)
@@ -256,9 +272,25 @@ object sem {
 
   case class Universe() extends Value
 
-  case class Srh(t: Value, f: Value => Srh) // we use null to means STOPed here.. you should not really need this but..
-  case class Sigma(ms: Seq[String], ts: Srh) extends Value
-  case class Pi(left: Value, inside: Value => Value) extends Value
+  // we use null to means STOPed here.. you should not really need this but..
+  case class Srh(t: Value, f: Value => Srh) {
+    override def equals(obj: scala.Any) = obj match {
+      case Srh(tt, ff) => tt == t && {val g = Generic(); ff(g) == f(g)}
+      case _ => false
+    }
+  }
+  case class Sigma(ms: Seq[String], ts: Srh) extends Value {
+    override def equals(obj: scala.Any) = obj match {
+      case Sigma(m, t) => ms == m && t == ts
+      case _ => false
+    }
+  }
+  case class Pi(left: Value, inside: Value => Value) extends Value {
+    override def equals(obj: scala.Any) = obj match {
+      case Pi(l, ii) => left == l && { val g = Generic(); inside(g) == ii(g) }
+      case _ => false
+    }
+  }
   case class Sum(ts: Map[String, Value]) extends Value
 
 
@@ -373,8 +405,9 @@ trait Normalization {
 
 
   // needs to ensure term is well typed first!
+  // it is REALLY REALLY SLOW NOW. but we can emit JVM bytecode directly
+  // or we can use a vitrual machine!
   def eval(term: Term, ctx: TypingCtx): Value = {
-    // TODO eval cache for closed terms...
     def emitScala(t: Term, depth: Int): String = {
       t match {
         case GlobalReference(str) =>
@@ -395,7 +428,7 @@ trait Normalization {
           val d = depth + 1
           s"sem.Fix(b$d => ${emitScala(ttt, d)})"
         case Ascription(left, _) =>
-          emitScala(left, depth) // TODO?
+          emitScala(left, depth)
         case Lambda(_, body) =>
           val d = depth + 1
           s"sem.Lambda(b$d => ${emitScala(body, d)})"
@@ -431,18 +464,27 @@ trait Normalization {
         ctx(b)._1
       case Universe() => sem.Universe()
       case GlobalReference(str) => sem.GlobalReference(str)
-      case _ =>
-        var time = 0L
-        var timeEmitted = 0L
-        if (Debug) time = System.currentTimeMillis()
-        val text = emitScala(term, -1)
-        if (Debug) timeEmitted = System.currentTimeMillis() - time
-        val twitterEval = new Eval()
-        val res = twitterEval.apply[Value](text)
-        if (Debug) delog(lstr() + "Emitted in " + timeEmitted + ". Compiled in " + (System.currentTimeMillis() - time - timeEmitted) + ". " + text)
-        res
+      case k =>
+        evalCache.get(k) match {
+          case Some(a) =>
+            if (Debug && !debuggingInferCheck) delog(lstr() + "Eval cache hit")
+            a
+          case None =>
+            var time = 0L
+            var timeEmitted = 0L
+            if (Debug) time = System.currentTimeMillis()
+            val text = emitScala(term, -1)
+            if (Debug) timeEmitted = System.currentTimeMillis() - time
+            val twitterEval = new Eval()
+            val res = twitterEval.apply[Value](text)
+            if (Debug && !debuggingInferCheck) delog(lstr() + "Emitted in " + timeEmitted + ". Compiled in " + (System.currentTimeMillis() - time - timeEmitted) + ". " + text)
+            if (k.closed()) evalCache.put(k, res)
+            res
+        }
     }
   }
+
+  val evalCache = mutable.HashMap.empty[Term, Value]
 
   val DebugNbe = Debug && false
   def nbe(t: Term, testOnlyForceFullValue: Boolean = false) = {
@@ -726,6 +768,11 @@ object tests extends scala.App with TypeCheck {
     else if (t.size == 2) Lambda(Some(t.head), t(1))
     else Lambda(Some(Sigma((0 until t.size - 1).map("_" + _), t.dropRight(1))), t.last)
 
+  def sigma(t: Object*) = {
+    val k = t.grouped(2).toSeq
+    Sigma(k.map(_.head.asInstanceOf[String]), k.map(_(1).asInstanceOf[Term]))
+  }
+
   def tps(t: Term) = t match { // trim parameters
     case l: Lambda =>
       l.copy(is = None)
@@ -823,8 +870,6 @@ object tests extends scala.App with TypeCheck {
     pi(unit, unit, unit)
   )
 
-  Debug = true
-
   val silly_app = debugDefine("silly_app",
     lam(pi(unit, unit), unit, a(Ascription(Lambda(None, a(rr(1, 0), r(0))), pi(unit, unit)), rr(0, 1))),
     pi(pi(unit, unit), unit, unit)
@@ -842,15 +887,12 @@ object tests extends scala.App with TypeCheck {
     pi(u, r(0), rr(0, 0))
   )
 
-  Debug = true
   // lambda (x: type, tf: type => type, ff: x => (tf x), b: x): (tf x) = fix self => (ff b)
   val id_2 = debugDefine("id_2",
     lam(u, pi(u, u), pi(r(1), a(r(1), r(2))), r(2), fix(a(rr(1, 2), rr(1, 3)))),
     pi(u, pi(u, u), pi(r(1), a(r(1), r(2))), r(2), a(rr(0, 1), rr(0, 0)))
   )
 
-  
-  abort()
 
 
   val record_unit_unit0_unit0 = debugDefine("record_unit_unit0_unit0",
@@ -952,37 +994,67 @@ object tests extends scala.App with TypeCheck {
   )
 
   // fix self => sum(zero: unit, succ: self)
-  val num = debugDefine("num",
+  val nat = debugDefine("nat",
     fix(Sum(Map("zero" -> unit, "succ" -> r(0)))),
     u
   )
 
   Debug = true
+  // lam n: nat => lam(y: (int => int) => {x: type, y: x}): (y (lam x => n)).x = y(lam x => n).y
+  val test_lam_eq = debugDefine("test_lam_eq",
+    lam(nat, lam(pi(pi(nat, nat), sigma("x", u, "y", r(0))), Projection(a(r(0), Lambda(None, r(2))), "y"))),
+    pi(nat, pi(pi(pi(nat, nat), sigma("x", u, "y", r(0))), Projection(a(r(0), Lambda(None, r(2))), "x")))
+  )
 
-  val n0 = debugDefine("n0", Construct("zero", unit0), num)
-  val n1 = debugDefine("n1", Construct("succ", n0), num)
-  val n2 = debugDefine("n2", Construct("succ", n1), num)
-  val n3 = debugDefine("n3", Construct("succ", n2) , num)
-  val n4 = debugDefine("n4", Construct("succ", n3) , num)
-  val n5 = debugDefine("n5", Construct("succ", n4) , num)
-  val n6 = debugDefine("n6", Construct("succ", n5) , num)
-  val n7 = debugDefine("n7",  Construct("succ", n6) , num)
-  val n8 = debugDefine("n8",  Construct("succ", n7) , num)
-  val n9 = debugDefine("n9", Construct("succ", n8) , num)
-  val n10 = debugDefine("n10", Construct("succ", n9) , num)
-  val n11 = debugDefine("n11", Construct("succ", n10) , num)
-  val n12 = debugDefine("n12", Construct("succ", n11) , num)
-  val n13 = debugDefine("n13", Construct("succ", n12) , num)
-  val n14 = debugDefine("n14", Construct("succ", n13) , num)
-  val n15 = debugDefine("n15", Construct("succ", n14), num)
-  val n16 = debugDefine("n16", Construct("succ", n15) , num)
+  abort()
 
+
+  
+
+  val n0 = debugDefine("n0", Construct("zero", unit0), nat)
+  val n1 = debugDefine("n1", Construct("succ", n0), nat)
+  val n2 = debugDefine("n2", Construct("succ", n1), nat)
+  val n3 = debugDefine("n3", Construct("succ", n2) , nat)
+  val n4 = debugDefine("n4", Construct("succ", n3) , nat)
+  val n5 = debugDefine("n5", Construct("succ", n4) , nat)
+  val n6 = debugDefine("n6", Construct("succ", n5) , nat)
+  val n7 = debugDefine("n7",  Construct("succ", n6) , nat)
+  val n8 = debugDefine("n8",  Construct("succ", n7) , nat)
+  val n9 = debugDefine("n9", Construct("succ", n8) , nat)
+  val n10 = debugDefine("n10", Construct("succ", n9) , nat)
+  val n11 = debugDefine("n11", Construct("succ", n10) , nat)
+  val n12 = debugDefine("n12", Construct("succ", n11) , nat)
+  val n13 = debugDefine("n13", Construct("succ", n12) , nat)
+  val n14 = debugDefine("n14", Construct("succ", n13) , nat)
+  val n15 = debugDefine("n15", Construct("succ", n14), nat)
+  val n16 = debugDefine("n16", Construct("succ", n15) , nat)
+
+
+
+  val lam_nat_always_nat = debugDefine("lam_nat_always_nat",
+    lam(nat, nat),
+    pi(nat, u)
+  )
+
+  val lam_silly = debugDefine("lam_silly",
+    fix(lam(nat, a(lam_nat_always_nat, n0))),
+    pi(nat, u)
+  )
+
+  fails(() => {
+    debugDefine("fails",
+      fix(lam(nat, a(lam_nat_always_nat, Ascription(n0, a(r(1), n0))))),
+      pi(nat, u)
+    )
+  })
+
+  abort()
 
   val n0t16 = Seq(n0, n1, n2, n3, n4, n5, n6, n7, n8, n9, n10, n11, n12, n13, n14, n15, n16)
 
   val succ = debugDefine("succ",
-    lam(num, Construct("succ", r(0))),
-    pi(num, num)
+    lam(nat, Construct("succ", r(0))),
+    pi(nat, nat)
   )
 
   assert(fff(a(succ, n1)) == fff(n2))
@@ -1002,20 +1074,20 @@ object tests extends scala.App with TypeCheck {
     pi(u, u, u)
   )
 
-  assert(fff(a(pair, num, num)) == fff(Sigma(Seq("_0", "_1"), Seq(num, num))))
+  assert(fff(a(pair, nat, nat)) == fff(Sigma(Seq("_0", "_1"), Seq(nat, nat))))
 
 
   // fix self => (a, b: nat) => split a { case zero => b; case succ k => succ(self k b) }
   val plus = debugDefine("plus",
-    fix(lam(num, num, Ascription(Split(rr(0, 0), Map("zero" -> rr(1, 1), "succ" -> Construct("succ", a(r(2), r(0), rr(1, 1))))), num))),
-    pi(num, num, num)
+    fix(lam(nat, nat, Ascription(Split(rr(0, 0), Map("zero" -> rr(1, 1), "succ" -> Construct("succ", a(r(2), r(0), rr(1, 1))))), nat))),
+    pi(nat, nat, nat)
   )
 
 
   // fix self => (a, b: nat) => split a { case zero => b; case succ k => succ(self b k) }
   val plus1 = debugDefine("plus1",
-    fix(lam(num, num, Ascription(Split(rr(0, 0), Map("zero" -> rr(1, 1), "succ" -> Construct("succ", a(r(2), rr(1, 1), r(0))))), num))),
-    pi(num, num, num)
+    fix(lam(nat, nat, Ascription(Split(rr(0, 0), Map("zero" -> rr(1, 1), "succ" -> Construct("succ", a(r(2), rr(1, 1), r(0))))), nat))),
+    pi(nat, nat, nat)
   )
   // fix self => (b, a: nat) => split a { case zero => b; case succ k => succ(self k b) }
   // fix self => (b, a: nat) => split a { case zero => b; case succ k => succ(self b k) }
@@ -1030,8 +1102,8 @@ object tests extends scala.App with TypeCheck {
   }
 
   // fix self => (a, b: nat) => split a { case zero => 0; case succ k => (plus b (self k b) }
-  val mult = fix(lam(num, num, Split(rr(0, 0), Map("zero" -> n0, "succ" -> a(plus, rr(1, 1), a(r(2), r(0), rr(1, 1)))))))
-  val mult1 = fix(lam(num, num, Split(rr(0, 0), Map("zero" -> n0, "succ" -> a(plus, rr(1, 1), a(r(2), rr(1, 1), r(0)))))))
+  val mult = fix(lam(nat, nat, Split(rr(0, 0), Map("zero" -> n0, "succ" -> a(plus, rr(1, 1), a(r(2), r(0), rr(1, 1)))))))
+  val mult1 = fix(lam(nat, nat, Split(rr(0, 0), Map("zero" -> n0, "succ" -> a(plus, rr(1, 1), a(r(2), rr(1, 1), r(0)))))))
 
   for (i <- 0 to 16) {
     for (j <- 0 to 16) {

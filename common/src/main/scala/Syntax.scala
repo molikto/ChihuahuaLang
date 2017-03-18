@@ -64,6 +64,7 @@ case class Ascription(term: Term, ty: Term) extends Term {
 case class Lambda(is: Option[Term], body: Term) extends Term {
   override def closed0(): Int = is.map(_.closedRemember()).getOrElse(-1) max (body.closedRemember() - 1)
   override def toString = s"lam(${is.getOrElse("")}) => $body"
+
 }
 case class Pi(is: Term, to: Term) extends Term { // only the right is UNDER BINDING...
   override def closed0(): Int = is.closedRemember max (to.closedRemember() - 1)

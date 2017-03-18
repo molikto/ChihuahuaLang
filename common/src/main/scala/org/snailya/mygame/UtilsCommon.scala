@@ -18,7 +18,7 @@ trait UtilsCommon {
   }
 
   def swapCoordinate[T](seq: Seq[Seq[T]]): Seq[Seq[T]] = {
-    for (x <- 0 until seq.head.length) yield for (y <- 0 until seq.length) yield seq(y)(x)
+    for (x <- seq.head.indices) yield for (y <- seq.indices) yield seq(y)(x)
   }
 
   def delog(s: => Object) = {
