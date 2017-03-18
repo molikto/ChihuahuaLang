@@ -26,7 +26,7 @@ trait UtilsCommon {
       try {
         println(s)
       } catch {
-        case _: Throwable =>
+        case e: Throwable => e.printStackTrace()
       }
     }
   }

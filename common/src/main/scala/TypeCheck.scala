@@ -51,11 +51,9 @@ object sem {
           val k = Generic()
           t0(k) subtypeOf t1(k)
         case (sem.Fix(t), a) =>
-          val k = this
-          t(k) subtypeOf a
+          t(this) subtypeOf a
         case (a, sem.Fix(t)) =>
-          val k = o
-          a subtypeOf t(k)
+          a subtypeOf t(o)
         case (GlobalReference(g1), GlobalReference(g2)) =>
           if (g1 == g2) true
           else sem.global(g1).svalue subtypeOf sem.global(g2).svalue
@@ -94,11 +92,9 @@ object sem {
             val k = Generic()
             t0(k) :/\: t1(k)
           case (sem.Fix(t), a) =>
-            val k = this
-            t(k) :/\: a
+            t(this) :/\: a
           case (a, sem.Fix(t)) =>
-            val k = o
-            a :/\: t(k)
+            a :/\: t(o)
           case (s0@sem.Sigma(ms0, ts0), s1@sem.Sigma(ms1, ts1)) => // assuming nat <: integer we have sigma[@a nat, @b type] <: [@a integer]
             if (s0 subtypeOf s1) { // TODO bad
               s0
@@ -239,6 +235,8 @@ object sem {
   // the name is from the paper "miniTT"
   case class Generic(name: String = newUniqueName()) extends Stuck // this references the things in our env
 
+  val Poison = Generic()
+
   // accumulators
   case class Projection(value: Stuck, str: String) extends Stuck
   case class App(atom: Stuck, app: Value) extends Stuck
@@ -302,7 +300,7 @@ object sem {
     def emitScala(s: String, ty: Char = ' ') = s"sem.names.lookup(${register(s, ty)})"
   }
 
-  type TypingCtx = Seq[(String, Value)]
+  type TypingCtx = Seq[(sem.Generic, Value)]
 
 }
 
@@ -319,10 +317,15 @@ trait Normalization {
         case sem.GlobalReference(n) =>
           if (testOnlyForceFullValue) rec(sem.global(n).svalue, 0)
           else GlobalReference(n)
-        case sem.Generic(g) =>
+        case gg@sem.Generic(g) =>
+          if (gg == sem.Poison) {
+            val lr = LocalReference(1000)
+            lr.debugGeneric = "poison"
+            return lr
+          }
           for (i <- ctx.indices) {
             val cs = ctx(i)
-            if (cs._1 == g) {
+            if (cs._1.name == g) {
               val local = LocalReference(depth + 1 + i)
               local.debugGeneric = g
               return local
@@ -383,7 +386,7 @@ trait Normalization {
           // when reconstructing the term, the depth of binding site is stable when we construct them
           // and when the reference is constructed, the depth of the term is table, and so we can get
           // back the index
-          if (b > depth) s"sem.Generic(${sem.names.emitScala(ctx(b - depth - 1)._1, '$')})"
+          if (b > depth) s"sem.Generic(${sem.names.emitScala(ctx(b - depth - 1)._1.name, '$')})"
           //if (b > depth) s"sem.OpenReference(${b - depth - 1}, $s)"
           else s"b${depth - b}"
 //        case Generic(a) =>
@@ -425,7 +428,7 @@ trait Normalization {
     // we skip code generation for atom ones, it might be faster than compiling the code...?
     term match {
       case LocalReference(b) =>
-        sem.Generic(ctx(b)._1)
+        ctx(b)._1
       case Universe() => sem.Universe()
       case GlobalReference(str) => sem.GlobalReference(str)
       case _ =>
@@ -467,17 +470,17 @@ trait TypeCheck extends Normalization {
   case class Context(ctx: TypingCtx) {
 
     def expand(v: Value) = {
-      val pair = (sem.Generic().name, v)
+      val pair = (sem.Generic(), v)
       this.copy(ctx = pair +: ctx)
     }
 
-    def expand(pair: (String, Value)) = this.copy(ctx = pair +: ctx)
+    def expand(pair: (sem.Generic, Value)) = this.copy(ctx = pair +: ctx)
 
-    def head: (String, Value) = ctx.head
+    def head: (sem.Generic, Value) = ctx.head
 
-    def debugContextStr() = ctx.reverse.map(k => k._1 +":" + readback(k._2, ctx, isDebug = true)).mkString(" __ ")
+    def debugContextStr() = ctx.reverse.map(k => k._1.name +":" + readback(k._2, ctx, isDebug = true)).mkString(" __ ")
 
-    def local(l: LocalReference): Value = ctx(l.big)._2
+    def local(l: LocalReference): Value = { val res = ctx(l.big)._2; if (res == sem.Poison) throw new Exception("I am poisoned") else res }
 
     // return the type of a term in semantics world
     def infer(term: Term, debugFromCheck: Boolean = false): Value = {
@@ -505,30 +508,37 @@ trait TypeCheck extends Normalization {
         case _: GlobalReference => throw new IllegalStateException("Should be short-cut")
         case l: LocalReference => local(l)
         case Fix(t) =>
-          def checkFixType(a: Term) = {
+          def fixCheckType(a: Term) = {
             expand(sem.Universe()).checkIsType(a)
             sem.Universe()
           }
           t match {
             case Ascription(tt, ty) =>
-              val vty = checkIsTypeAndEval(ty)
+              val vty = expand(sem.Poison).checkIsTypeAndEval(ty)
               expand(vty).check(tt, vty)
               vty
             case Lambda(Some(is), Ascription(tt, ty)) =>
               // some fishy thing going on here... but it is ok...
-              val pty = checkIsTypeAndEval(is)
-              val ct = expand(pty)
+              // NOTICE: instead of remembering the context in a value like in miniTT,
+              // we use a different approach, make sure this in the checker level,
+              // this can make the eval (read back ) thing works, some variables once
+              // bounded to
+              val pos = expand(sem.Poison)
+              val pty = pos.checkIsTypeAndEval(is)
+              val ct = pos.expand(pty)
               val vty = ct.checkIsTypeAndEval(ty)
-              val ttt = eval(Pi(readback(pty, ctx), readback(vty, ct.ctx)), ctx)
+              val ttt = eval(Pi(readback(pty, pos.ctx), readback(vty, ct.ctx)), pos.ctx)
+              // if they are referring some generic, it is ok to expand here, they
+              // will get rebind to them correctly after read back
               expand(ttt).expand(ct.head).check(tt, vty)
               ttt
             case a: Sum =>
-              checkFixType(a)
+              fixCheckType(a)
             case a: Pi =>
-              checkFixType(a)
+              fixCheckType(a)
             case a: Sigma =>
-              checkFixType(a)
-            case _ => throw new Exception("Cannot infer Fix")
+              fixCheckType(a)
+            case unknown => expand(sem.Poison).infer(unknown)
           }
         case Ascription(left, ty) =>
           val r = checkIsTypeAndEval(ty)
@@ -544,8 +554,7 @@ trait TypeCheck extends Normalization {
         case App(l, rs) =>
           force(infer(l)) match {
             case sem.Pi(left, right) =>
-              val t = checkAndEval(rs, left)
-              right(t)
+              right(checkAndEval(rs, left))
             case _ => throw new Exception("Cannot infer App")
           }
 
@@ -582,14 +591,16 @@ trait TypeCheck extends Normalization {
               }))
             case _ => throw new Exception("Cannot infer Split")
           }
-        case a: Pi =>
-          expand(checkIsTypeAndEval(a.is)).checkIsType(a.to)
+        case Pi(is, to) =>
+          expand(checkIsTypeAndEval(is)).checkIsType(to)
           sem.Universe()
-        case a: Sum =>
-          a.ts.values.foreach(k => checkIsType(k))
+        case Sum(ts) =>
+          ts.values.foreach(k => checkIsType(k))
           sem.Universe()
-        case a: Sigma =>
-          a.ts.foldLeft(this) { (c, t) =>
+        case Sigma(_, ts) =>
+          // in miniTT... ESig p a b -> checkT k rho gma (EPi p a b)
+          // they replaced with a Pi rule.. interesting...
+          ts.foldLeft(this) { (c, t) =>
             c.expand(c.checkIsTypeAndEval(t))
           }
           sem.Universe()
@@ -648,7 +659,7 @@ trait TypeCheck extends Normalization {
           } else {
             val gs = sem.Generic()
             val t = inside(gs)
-            expand((gs.name, left)).check(body, t)
+            expand((gs, left)).check(body, t)
           }
         case (Record(ms, ts), sem.Sigma(ms0, ts0)) => // this is all similar to app...
           assert(ms == ms0)
@@ -819,7 +830,28 @@ object tests extends scala.App with TypeCheck {
     pi(pi(unit, unit), unit, unit)
   )
 
+  // lambda (x: type) = fix self => lambda (y: x) => y as x
+  val silly_fix = debugDefine("silly_fix",
+    lam(u, fix(lam(r(1), Ascription(r(0), r(2))))),
+    pi(u, pi(r(0), r(1)))
+  )
+
+  // lambda (x: type, y: x) => fix self => (y as x)
+  val silly_asc = debugDefine("silly_asc",
+    lam(u, r(0), fix(Ascription(rr(1, 1), rr(1, 0)))),
+    pi(u, r(0), rr(0, 0))
+  )
+
+  Debug = true
+  // lambda (x: type, tf: type => type, ff: x => (tf x), b: x): (tf x) = fix self => (ff b)
+  val id_2 = debugDefine("id_2",
+    lam(u, pi(u, u), pi(r(1), a(r(1), r(2))), r(2), fix(a(rr(1, 2), rr(1, 3)))),
+    pi(u, pi(u, u), pi(r(1), a(r(1), r(2))), r(2), a(rr(0, 1), rr(0, 0)))
+  )
+
+  
   abort()
+
 
   val record_unit_unit0_unit0 = debugDefine("record_unit_unit0_unit0",
     Record(Seq("a", "b", "c"), Seq(unit, unit0, unit0)),

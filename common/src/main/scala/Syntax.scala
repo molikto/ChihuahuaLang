@@ -92,6 +92,7 @@ case class Record(ms: Seq[String], ts: Seq[Term]) extends Term {
 // we will always assume that our Sigma type is of this order...
 case class Sigma(ms: Seq[String], ts: Seq[Term]) extends Term { // so the left most variable IS NOT closed
   assert(ms.size == ts.size)
+  assert(ms.toSet.size == ms.size)
   assert(normalized())
   def normalized(): Boolean = true // TODO
   override def closed0(): Int = if (ts.isEmpty) -1 else ts.zipWithIndex.map(p => p._1.closedRemember() - p._2).max
