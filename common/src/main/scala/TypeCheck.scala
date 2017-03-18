@@ -949,15 +949,15 @@ object tests extends scala.App with TypeCheck {
   )
 
 
-  val unit_pair_1_1_alt = debugDefine("unit_pair_1_1_alt",
-    record("a", unit0, "b", unit0),
-    sigma("a", unit)
-  )
-
-  val unit_pair_1_1_alt1 = debugDefine("unit_pair_1_1_alt1",
-    record("a", unit0, "b", unit0),
-    sigma("b", unit)
-  )
+//  val unit_pair_1_1_alt = debugDefine("unit_pair_1_1_alt",
+//    record("a", unit0, "b", unit0),
+//    sigma("a", unit)
+//  )
+//
+//  val unit_pair_1_1_alt1 = debugDefine("unit_pair_1_1_alt1",
+//    record("a", unit0, "b", unit0),
+//    sigma("b", unit)
+//  )
 
   fails(() => {
     debugDefine("fails",
