@@ -744,17 +744,8 @@ trait TypeCheck {
       }
     }
 
-
-
-    def join(seq: Seq[Value]): Value = {
-      assert(seq.nonEmpty)
-      seq.tail.fold(seq.head) { (v0, v1) => join(v0, v1)}
-    }
-
-    def meet(seq: Seq[Value]): Value = {
-      assert(seq.nonEmpty)
-      seq.tail.fold(seq.head) { (v0, v1) => meet(v0, v1) }
-    }
+    def join(seq: Seq[Value]): Value = { assert(seq.nonEmpty); seq.tail.fold(seq.head) { (v0, v1) => join(v0, v1) } }
+    def meet(seq: Seq[Value]): Value = { assert(seq.nonEmpty); seq.tail.fold(seq.head) { (v0, v1) => meet(v0, v1) } }
   }
 
   object Context {
