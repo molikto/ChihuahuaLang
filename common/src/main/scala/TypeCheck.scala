@@ -225,7 +225,7 @@ object sem {
         i += 1
       }
       _dependence = ms.zip(dd).toMap
-      if (Debug && !debuggingInferCheck) delog("Calculated dependency " + dd)
+      if (Debug && !debuggingInferCheck) delog(lstr() + "Calculated dependency " + dd)
       _dependence
     }
   }
@@ -347,7 +347,7 @@ object normal {
   // needs to ensure term is well typed first!
   // it is REALLY REALLY SLOW NOW. but we can emit JVM bytecode directly
   // or we can use a vitrual machine!
-  def eval(term: Term, ctx: TypingCtx): Value = {
+  def eval(term: Term, ctx: TypingCtx, isDebug: Boolean = false): Value = {
     def emitScala(t: Term, depth: Int): String = {
       t match {
         case GlobalReference(str) =>
@@ -417,7 +417,7 @@ object normal {
             if (Debug) timeEmitted = System.currentTimeMillis() - time
             val twitterEval = new Eval()
             val res = twitterEval.apply[Value](text)
-            if (Debug && !debuggingInferCheck) delog(lstr() + "Emitted in " + timeEmitted + ". Compiled in " + (System.currentTimeMillis() - time - timeEmitted) + ". " + text)
+            if (Debug && !debuggingInferCheck && !isDebug) delog(lstr() + "Emitted in " + timeEmitted + ". Compiled in " + (System.currentTimeMillis() - time - timeEmitted) + ". " + text)
             if (k.closed()) evalCache.put(k, res)
             res
         }
@@ -429,8 +429,8 @@ object normal {
   val DebugNbe = Debug && false
   def nbe(t: Term, testOnlyForceFullValue: Boolean = false) = {
     if (DebugNbe) delog("NbE: " + t)
-    val e = eval(t, Seq.empty)
-    val rb = readback(e, Seq.empty, testOnlyForceFullValue = testOnlyForceFullValue)
+    val e = eval(t, Seq.empty, isDebug = testOnlyForceFullValue)
+    val rb = readback(e, Seq.empty, testOnlyForceFullValue = testOnlyForceFullValue, isDebug = testOnlyForceFullValue)
     if (DebugNbe) delog("\t" + rb)
     rb
   }
@@ -677,10 +677,15 @@ trait TypeCheck {
 
     def subtypeOf(th: Value, o: Value): Boolean = {
       if (th eq o) return true
+      (th, o) match {
+        case (sem.Universe(), sem.Universe()) => return true
+        case (sem.Generic(a), sem.Generic(b)) => return a == b
+        case _ => Unit
+      }
 //      if (Debug) {
       if (Debug && !debuggingInferCheck) {
-        level += 1
         delog(lstr() + "Subtype called " + readback(th, ctx, isDebug = true) + " and " + readback(o, ctx, isDebug = true))
+        level += 1
       }
       val res = (th, o) match {
         case (sem.Fix(t0), sem.Fix(t1)) =>
@@ -726,10 +731,15 @@ trait TypeCheck {
     // then c <: a and c <: b
     def meet(th: Value, o: Value): Value = {
       if (th eq o) return th
+      (th, o) match {
+        case (kk@sem.Universe(), sem.Universe()) => return kk
+        case (kk@sem.Generic(a), sem.Generic(b)) => if (a == b) return kk else throw new Exception("")
+        case _ => Unit
+      }
 //      if (Debug) {
       if (Debug && !debuggingInferCheck) {
-        level += 1
         delog(lstr() + "Meet called " + readback(th, ctx, isDebug = true) + " AND " + readback(o, ctx, isDebug = true))
+        level += 1
       }
       val res = (th, o) match {
         case (sem.Fix(t0), sem.Fix(t1)) =>
