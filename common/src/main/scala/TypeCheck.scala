@@ -46,13 +46,9 @@ object sem {
         if (this eq o) true
         else {
           (this, o) match {
-            case (sem.Fix(t0), sem.Fix(t1)) =>
-              val k = Generic()
-              t0(k) == t1(k)
-            case (sem.Fix(t), a) =>
-              t(this) == a
-            case (a, sem.Fix(t)) =>
-              a == t(o)
+            case (sem.Fix(t0), sem.Fix(t1)) => val k = Generic(); t0(k) == t1(k)
+            case (sem.Fix(t), a) => t(this) == a
+            case (a, sem.Fix(t)) => a == t(o)
 
             case (sem.GlobalReference(g1), sem.GlobalReference(g2)) =>
               if (g1 == g2) true
@@ -71,9 +67,7 @@ object sem {
               a == aa && b == bb
 
             case (sem.Record(ms, vs), sem.Record(m, v)) =>
-              if (ms.toSet == m.toSet) {
-                ms.forall(k => vs(ms.indexOf(k)) == v(m.indexOf(k)))
-              } else false
+              if (ms.toSet == m.toSet) ms.forall(k => vs(ms.indexOf(k)) == v(m.indexOf(k))) else false
             case (s@sem.Sigma(ms, ts), s1@sem.Sigma(m, t)) =>
               // assuming nat <: integer we have [nat, nat] <: [integer]
               if (s.dependenceGraph == s1.dependenceGraph) {
@@ -581,11 +575,7 @@ trait TypeCheck {
           ts.values.foreach(k => checkIsType(k))
           sem.Universe()
         case Sigma(_, ts) =>
-          // in miniTT... ESig p a b -> checkT k rho gma (EPi p a b)
-          // they replaced with a Pi rule.. interesting...
-          ts.foldLeft(this) { (c, t) =>
-            c.expand(c.checkIsTypeAndEval(t))
-          }
+          ts.foldLeft(this) { (c, t) => c.expand(c.checkIsTypeAndEval(t)) }
           sem.Universe()
         case Universe() =>
           sem.Universe()
@@ -710,12 +700,10 @@ trait TypeCheck {
           subtypeOf(vl1, vl) && { val g = (Generic(), Generic()); expand(g).subtypeOf(vs(g._1), vs1(g._1)) }
         case (sem.Sum(ts), sem.Sum(ts1)) =>
            // assuming nat <: integer, we have sum[#a nat] <: sum[#a integer, #b type]
-          if ((ts.keySet -- ts1.keySet).isEmpty) {
-            ts.forall(pair => subtypeOf(pair._2, ts1(pair._1)))
-          } else false
+          if ((ts.keySet -- ts1.keySet).isEmpty) ts.forall(pair => subtypeOf(pair._2, ts1(pair._1))) else false
         case (s@sem.Sigma(_, _), s1@sem.Sigma(_, _)) =>
           // assuming nat <: integer we have [nat, nat] <: [integer]
-          meet(s, s1) == s
+          meet(s, s1) == s1
         case (a, b) => a == b // these are cases for Universe, Lambda etc
       }
 //      if (Debug) {
@@ -782,7 +770,7 @@ trait TypeCheck {
             }
           }
           val allDep = d0 ++ d1
-          var ms = allDep.filter(_._2.isEmpty).keys.toSeq // this is the new fields
+          var ms = allDep.filter(_._2.isEmpty).keys.toSeq // this is the new fields, first we collect the ones without dependency
           while (ms.size < allDep.size) {
             val sizeS = ms.size
             for (m <- allDep) {
