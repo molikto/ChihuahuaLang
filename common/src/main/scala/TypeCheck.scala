@@ -40,6 +40,69 @@ object sem {
     def projection(s: String): Value = throw new Exception()
     def app(seq: Value): Value = throw new Exception()
     def split(bs: Map[String, Value => Value]): Value = throw new Exception()
+
+    final override def equals(obj: scala.Any) = obj match {
+      case o: Value =>
+        if (this eq o) true
+        else {
+          (this, o) match {
+            case (sem.Fix(t0), sem.Fix(t1)) =>
+              val k = Generic()
+              t0(k) == t1(k)
+            case (sem.Fix(t), a) =>
+              t(this) == a
+            case (a, sem.Fix(t)) =>
+              a == t(o)
+
+            case (sem.GlobalReference(g1), sem.GlobalReference(g2)) =>
+              if (g1 == g2) true
+              else sem.global(g1).svalue == sem.global(g2).svalue
+            case (sem.GlobalReference(g1), g2) =>
+              sem.global(g1).svalue == g2
+            case (g1, sem.GlobalReference(g2)) =>
+              g1 == sem.global(g2).svalue
+
+            case (sem.Lambda(f), sem.Lambda(fun)) =>
+              val g = Generic(); fun(g) == f(g)
+            case (sem.Pi(vl, vs), sem.Pi(vl1, vs1)) =>
+              // assuming nat <: integer, we have integer => nat subtypeOf nat => integer
+              (vl1 == vl) && { val g = Generic(); vs(g) == vs1(g) }
+            case (sem.App(a, b), sem.App(aa, bb)) =>
+              a == aa && b == bb
+
+            case (sem.Record(ms, vs), sem.Record(m, v)) =>
+              if (ms.toSet == m.toSet) {
+                ms.forall(k => vs(ms.indexOf(k)) == v(m.indexOf(k)))
+              } else false
+            case (s@sem.Sigma(ms, ts), s1@sem.Sigma(m, t)) =>
+              // assuming nat <: integer we have [nat, nat] <: [integer]
+              if (s.dependenceGraph == s1.dependenceGraph) {
+                val gs = ms.map(_ => Generic())
+                def rec(m: Seq[String], srh: Srh): Seq[Value] = if (srh == null) Seq.empty else srh.t +: rec(m.tail, srh.f(gs(ms.indexOf(m.head))))
+                val k1 = rec(ms, ts)
+                val k2 = rec(m, t).zip(m.map(i => ms.indexOf(i))).sortBy(_._2).map(_._1)
+                k1.zip(k2).forall(p => p._1 == p._2)
+              } else false
+            case (sem.Projection(v, s), sem.Projection(vv, ss)) =>
+              v == vv && s == ss
+
+            case (sem.Construct(n, a), sem.Construct(nn, aa)) =>
+              n == nn && a == aa
+            case (sem.Sum(ts), sem.Sum(ts1)) =>
+              // assuming nat <: integer, we have sum[#a nat] <: sum[#a integer, #b type]
+              ts.keySet == ts1.keySet && ts.forall(pair => pair._2 == ts1(pair._1))
+            case (sem.Split(ss, names), sem.Split(s, n)) =>
+              ss == s && names.keySet == n.keySet && names.keySet.forall(s => {val g = Generic(); names(s)(g) == n(s)(g)})
+
+            case (sem.Generic(a), sem.Generic(b)) => a == b // these are cases for Universe, Lambda etc
+
+            case (sem.Universe(), sem.Universe()) =>
+              true
+            case (_, _) => false
+          }
+        }
+      case _ => false
+    }
   }
 
   // these are where stuck state starts
@@ -56,11 +119,6 @@ object sem {
     override def app(seq: Value) = t(this).app(seq)
     override def projection(s: String) = t(this).projection(s)
     override def split(bs: Map[String, Value => Value]) = t(this).split(bs)
-
-    override def equals(obj: scala.Any) = obj match {
-      case Fix(tt) => val g = Generic(); t(g) == tt(g)
-      case _ => false
-    }
   }
 
 
@@ -84,7 +142,7 @@ object sem {
     }
     var p = v
     var n = loop(p)
-    while (n != p) {
+    while (!(n eq p)) {
       p = n
       n = loop(p)
     }
@@ -107,23 +165,12 @@ object sem {
   // accumulators
   case class Projection(value: Stuck, str: String) extends Stuck
   case class App(atom: Stuck, app: Value) extends Stuck
-  case class Split(s: Stuck, names:  Map[String, Value => Value]) extends Stuck {
-    override def equals(obj: scala.Any) = obj match {
-      case Split(ss, n) =>
-        ss == s && names.keySet == n.keySet && names.keySet.forall(s => {val g = Generic(); names(s)(g) == n(s)(g)})
-      case _ => false
-    }
-  }
+  case class Split(s: Stuck, names:  Map[String, Value => Value]) extends Stuck
 
 
 
   case class Lambda(fun: Value => Value) extends Value {
     override def app(seq: Value) = fun(seq)
-
-    override def equals(obj: scala.Any) = obj match {
-      case Lambda(f) => val g = Generic(); fun(g) == f(g)
-      case _ => false
-    }
   }
   case class Construct(name: String, apps: Value) extends Value {
     override def split(bs: Map[String, Value => Value]) = bs(name)(apps)
@@ -135,24 +182,55 @@ object sem {
   case class Universe() extends Value
 
   // we use null to means STOPed here.. you should not really need this but..
-  case class Srh(t: Value, f: Value => Srh) {
-    override def equals(obj: scala.Any) = obj match {
-      case Srh(tt, ff) => tt == t && {val g = Generic(); ff(g) == f(g)}
-      case _ => false
-    }
-  }
+  case class Srh(t: Value, f: Value => Srh)
+
   case class Sigma(ms: Seq[String], ts: Srh) extends Value {
-    override def equals(obj: scala.Any) = obj match {
-      case Sigma(m, t) => ms == m && t == ts
-      case _ => false
+    val mset = ms.toSet
+
+    var _dependence: Map[String, Set[String]] = null
+
+    def dependenceGraph: Map[String, Set[String]] = if (_dependence != null) _dependence else {
+      def rb(v: Value, map: Map[Generic, String]): Set[String] = v match {
+        case sem.GlobalReference(_) => Set.empty
+        case gg: sem.Generic => map.get(gg).toSet
+        case sem.Fix(f) => rb(f(OpenReference(0)), map)
+        case sem.OpenReference(_) => Set.empty
+        case sem.Lambda(fun) => rb(fun(OpenReference(0)), map)
+        case sem.Construct(_, value) => rb(value, map)
+        case sem.Record(_, vs) => vs.flatMap(v => rb(v, map)).toSet
+        case sem.App(left, vs) => rb(left, map) ++ rb(vs, map)
+        case sem.Projection(vv, _) => rb(vv, map)
+        case sem.Split(ss, names) => rb(ss, map) ++ names.values.flatMap(v => rb(v(OpenReference(0)), map)).toSeq
+        case sem.Pi(left, fun) => rb(left, map) ++ rb(fun(OpenReference(0)), map)
+        case sem.Sigma(mms, tts) =>
+          var srh = tts
+          mms.indices.foldLeft(Seq.empty[String]) { (s, _) =>
+            val res = s ++ rb(srh.t, map)
+            srh = srh.f(OpenReference(0))
+            res
+          }.toSet
+        case sem.Sum(tts) => tts.values.flatMap(v => rb(v, map)).toSet
+        case sem.Universe() => Set.empty
+      }
+      var dd = Seq.empty[Set[String]]
+      var srh = ts
+      var i = 0
+      val map = mutable.Map.empty[Generic, String]
+      while (srh != null) {
+        val ds: Set[String] = if (map.isEmpty) Set.empty else rb(srh.t, map.toMap)
+        dd = dd :+ ds
+        val g = Generic()
+        map.put(g, ms(i))
+        srh = srh.f(g)
+        i += 1
+      }
+      _dependence = ms.zip(dd).toMap
+      if (Debug && !debuggingInferCheck) delog("Calculated dependency " + dd)
+      _dependence
     }
   }
-  case class Pi(left: Value, inside: Value => Value) extends Value {
-    override def equals(obj: scala.Any) = obj match {
-      case Pi(l, ii) => left == l && { val g = Generic(); inside(g) == ii(g) }
-      case _ => false
-    }
-  }
+
+  case class Pi(left: Value, inside: Value => Value) extends Value
   case class Sum(ts: Map[String, Value]) extends Value
 
 
@@ -560,36 +638,23 @@ trait TypeCheck {
       (term, ty) match {
         case (Lambda(is, body), p@sem.Pi(left, inside)) =>
           if (is.nonEmpty) {
-            assert(subtypeOf(infer(term, debugFromCheck = true), p))
+            if (!debuggingInferCheck) assert(subtypeOf(infer(term, debugFromCheck = true), p))
           } else {
             val gs = sem.Generic()
             val t = inside(gs)
             expand((gs, left)).check(body, t)
           }
         case (Record(ms, ts), sem.Sigma(ms0, ts0)) => // this is all similar to app...
-          assert(ms == ms0)
-          val size = ms.size
+          assert((ms.toSet -- ms0.toSet).isEmpty)
+          val size = ms0.size
           var i = 0
           var srh = ts0
           while (i < size) { // check i-th type
-            val v = checkAndEval(ts(i), srh.t)
+            val v = checkAndEval(ts(ms.indexOf(ms0(i))), srh.t)
             expand(v)
             srh = srh.f(v)
             i += 1
           }
-          /*
-          assert(subseqOf(ms0, ms))
-          val size = ms.size
-          var i = 0
-          var srh = ts0
-          while (i < size) { // check i-th type
-            if (ms0.contains(ms(i))) {
-              val v = checkAndEval(ts(i), srh.t)
-              expand(v)
-              srh = srh.f(v)
-            }
-            i += 1
-          }*/
         case (e, t) =>
           if (!debuggingInferCheck) assert(subtypeOf(infer(e, debugFromCheck = true), t))
       }
@@ -610,34 +675,18 @@ trait TypeCheck {
     def checkIsType(t: Term): Unit = assert(subtypeOf(infer(t), sem.Universe()))
 
 
-
-    // our subtyping seems to be no Top... only Bottom? now?
-
-    def subseqOf(a: Seq[String], b: Seq[String]): Boolean = {
-      if (a.isEmpty) true
-      else if (b.isEmpty) false
-      else if (a.head == b.head) subseqOf(a.tail, b.tail)
-      else subseqOf(a, b.tail)
-    }
-
-    def merge(a: Seq[String], b: Seq[String]): Seq[String] = {
-      if (a.isEmpty) b
-      else if (b.isEmpty) a
-      else if (a.head == b.head) a.head +: merge(a.tail, b.tail)
-      else {
-        val aa = a.head; val bb = b.head; val (s, m) = if (aa > bb) (bb, aa) else (aa, bb)
-        s +: m +: merge(a.tail, b.tail)
-      }
-    }
-
     def subtypeOf(th: Value, o: Value): Boolean = {
-      if (Debug && !debuggingInferCheck) delog(lstr() + "subtype called...")
       if (th eq o) return true
-      (th, o) match {
+//      if (Debug) {
+      if (Debug && !debuggingInferCheck) {
+        level += 1
+        delog(lstr() + "Subtype called " + readback(th, ctx, isDebug = true) + " and " + readback(o, ctx, isDebug = true))
+      }
+      val res = (th, o) match {
         case (sem.Fix(t0), sem.Fix(t1)) =>
           // TODO(low) there are situations Fix(Fix), Fix()... but I don't care now? same for meet and join
-          val k = Generic()
-          subtypeOf(t0(k), t1(k))
+          val k = (Generic(), Generic())
+          expand(k).subtypeOf(t0(k._1), t1(k._1))
         case (sem.Fix(t), a) =>
           subtypeOf(t(th), a)
         case (a, sem.Fix(t)) =>
@@ -653,17 +702,23 @@ trait TypeCheck {
 
         case (sem.Pi(vl, vs), sem.Pi(vl1, vs1)) =>
           // assuming nat <: integer, we have integer => nat subtypeOf nat => integer
-          subtypeOf(vl1, vl) && { val g = Generic(); subtypeOf(vs(g), vs1(g)) }
+          subtypeOf(vl1, vl) && { val g = (Generic(), Generic()); expand(g).subtypeOf(vs(g._1), vs1(g._1)) }
         case (sem.Sum(ts), sem.Sum(ts1)) =>
            // assuming nat <: integer, we have sum[#a nat] <: sum[#a integer, #b type]
           if ((ts.keySet -- ts1.keySet).isEmpty) {
             ts.forall(pair => subtypeOf(pair._2, ts1(pair._1)))
           } else false
-//        case (s@sem.Sigma(_, _), s1@sem.Sigma(_, _)) =>
-//          // assuming nat <: integer we have [nat, nat] <: [integer]
-//          meet(s, s1) == s
+        case (s@sem.Sigma(_, _), s1@sem.Sigma(_, _)) =>
+          // assuming nat <: integer we have [nat, nat] <: [integer]
+          meet(s, s1) == s
         case (a, b) => a == b // these are cases for Universe, Lambda etc
       }
+//      if (Debug) {
+      if (Debug && !debuggingInferCheck) {
+        level -= 1
+        delog(lstr() + "Subtype result " + res + " "  + readback(th, ctx, isDebug = true) + " and " + readback(o, ctx, isDebug = true))
+      }
+      res
     }
 
     // meet
@@ -671,10 +726,15 @@ trait TypeCheck {
     // then c <: a and c <: b
     def meet(th: Value, o: Value): Value = {
       if (th eq o) return th
-      (th, o) match {
+//      if (Debug) {
+      if (Debug && !debuggingInferCheck) {
+        level += 1
+        delog(lstr() + "Meet called " + readback(th, ctx, isDebug = true) + " AND " + readback(o, ctx, isDebug = true))
+      }
+      val res = (th, o) match {
         case (sem.Fix(t0), sem.Fix(t1)) =>
-          val k = Generic()
-          meet(t0(k), t1(k))
+          val k = (Generic(), Generic())
+          expand(k).meet(t0(k._1), t1(k._1))
         case (sem.Fix(t), a) =>
           meet(t(th), a)
         case (a, sem.Fix(t)) =>
@@ -688,7 +748,7 @@ trait TypeCheck {
         case (g1, sem.GlobalReference(g2)) =>
           meet(g1, sem.global(g2).svalue)
 
-        case (p0@sem.Pi(left, inside), p1@sem.Pi(left1, inside1)) => // assuming nat <: integer, we have integer => nat subtypeOf nat => integer
+        case (sem.Pi(left, inside), sem.Pi(left1, inside1)) => // assuming nat <: integer, we have integer => nat subtypeOf nat => integer
           val l = join(left, left1) // we need a parameter that can accept both of the parameters of them
           val g = (Generic(), Generic())
           val ex = expand(g)
@@ -699,12 +759,56 @@ trait TypeCheck {
           val keys = ts.keySet intersect ts1.keySet
           sem.Sum(keys.map(a => (a, meet(ts(a), ts1(a)))).toMap)
 
-//        case (s0@sem.Sigma(ms0, ts0), s1@sem.Sigma(ms1, ts1)) => // assuming nat <: integer we have sigma[@a nat, @b type] <: [@a integer]
-//          // assuming nat <: integer we have [nat, nat] <: [integer]
-//          val cx = merge(ms0, ms1)
+        case (s0@sem.Sigma(ms0, ts0), s1@sem.Sigma(ms1, ts1)) => // assuming nat <: integer we have sigma[@a nat, @b type] <: [@a integer]
+          // assuming nat <: integer we have [nat, nat] <: [integer]
+          // a meet of two sigma must contains all its fields, and also for the common fields that are not
+          // have the same dependency, a error is thrown
+          val common = s0.mset intersect s1.mset
+          val d0 = s0.dependenceGraph
+          val d1 = s1.dependenceGraph
+          for (c <- common) {
+            if (d0(c) != d1(c)) {
+              throw new Exception("wrong dependency type")
+            }
+          }
+          val allDep = d0 ++ d1
+          var ms = allDep.filter(_._2.isEmpty).keys.toSeq // this is the new fields
+          while (ms.size < allDep.size) {
+            val sizeS = ms.size
+            for (m <- allDep) {
+              if (!ms.contains(m._1) && m._2.forall(a => ms.contains(a))) {
+                ms = ms :+ m._1
+              }
+            }
+            if (ms.size == sizeS) throw new IllegalStateException("")
+          }
+          val gs = ms.map(_ => Generic())
+          val mg = ms.zip(gs)
+          val mgm = mg.toMap
 
-        case (a, b) => if (a == b) a throw new Exception("Noooo!")
+          // a._1, b._1, a._2 + b._2, a._3, .....
+          val nc = gs.dropRight(1).foldLeft(this) { (c, g) => c.expand((g, Generic())) }
+          def tt(ms: Seq[String], srh: sem.Srh): Seq[Value] = if (srh == null) Seq.empty else srh.t +: tt(ms.tail, srh.f(mgm(ms.head)))
+          val vs0 = tt(ms0, ts0) // the parameters might be out of order, but IT DOESN'T MATTER
+          val vs1 = tt(ms1, ts1)
+          val vs = mg.map(i => {
+            if (common.contains(i._1)) {
+              nc.meet(vs0(ms0.indexOf(i._1)) , vs1(ms1.indexOf(i._1)))
+            } else if (ms0.contains(i._1)) {
+              vs0(ms0.indexOf(i._1))
+            } else {
+              vs1(ms1.indexOf(i._1))
+            }
+          })
+          eval(Sigma(ms, vs.map(i => readback(i, nc.ctx))), ctx)
+        case (a, b) => if (a == b) a else throw new Exception("Noooo!")
       }
+//      if (Debug) {
+      if (Debug && !debuggingInferCheck) {
+        level -= 1
+        delog(lstr() + "Meet result " + readback(res, ctx, isDebug = true)  + " "  + readback(th, ctx, isDebug = true) + " and " + readback(o, ctx, isDebug = true))
+      }
+      res
     }
 
     // join
@@ -712,8 +816,8 @@ trait TypeCheck {
       if (th eq o) return th
       (th, o) match {
         case (sem.Fix(t0), sem.Fix(t1)) =>
-          val k = Generic()
-          join(t0(k), t1(k))
+          val k = (Generic(), Generic())
+          expand(k).join(t0(k._1), t1(k._1))
         case (sem.Fix(t), a) =>
           join(t(th), a)
         case (a, sem.Fix(t)) =>
@@ -727,14 +831,31 @@ trait TypeCheck {
         case (g1, sem.GlobalReference(g2)) =>
           join(g1, sem.global(g2).svalue)
 
-        case (p0@sem.Pi(left, inside), p1@sem.Pi(left1, inside1)) => // assuming nat <: integer, we have integer => nat subtypeOf nat => integer
+        case (sem.Pi(left, inside), sem.Pi(left1, inside1)) => // assuming nat <: integer, we have integer => nat subtypeOf nat => integer
           val l = meet(left, left1) // we need a parameter that can accept both of the parameters of them
-        val g = (Generic(), Generic())
+          val g = (Generic(), Generic())
           val ex = expand(g)
           val m = ex.join(inside(g._1), inside1(g._1))
           eval(Pi(readback(l, ctx), readback(m, ex.ctx)), ctx)
 
-//        case (s0@sem.Sigma(ms0, ts0), s1@sem.Sigma(ms1, ts1)) => // assuming nat <: integer we have sigma[@a nat, @b type] <: [@a integer]
+        case (s0@sem.Sigma(ms0, ts0), s1@sem.Sigma(ms1, ts1)) => // assuming nat <: integer we have sigma[@a nat, @b type] <: [@a integer]
+          val common = s0.mset intersect s1.mset
+          val d0 = s0.dependenceGraph
+          val d1 = s1.dependenceGraph
+          val valid = common.filter(a => d0(a) == d1(a))
+          val ms = ms0.filter(valid)
+          val gs = ms.map(_ => Generic())
+          val mg = ms.zip(gs)
+          val mgm = mg.toMap
+
+          val nc = gs.dropRight(1).foldLeft(this) { (c, g) => c.expand((g, Generic())) }
+          def tt(ms: Seq[String], srh: sem.Srh): Seq[Value] = if (srh == null) Seq.empty else srh.t +: tt(ms.tail, srh.f(mgm.withDefaultValue(Generic())(ms.head)))
+          val vs0 = tt(ms0, ts0) // the parameters might be out of order, but IT DOESN'T MATTER
+          val vs1 = tt(ms1, ts1)
+          val vs = mg.map(i => {
+            nc.join(vs0(ms0.indexOf(i._1)) , vs1(ms1.indexOf(i._1)))
+          })
+          eval(Sigma(ms, vs.map(i => readback(i, nc.ctx))), ctx)
 
         case (sem.Sum(ts), sem.Sum(ts1)) => // assuming nat <: integer, we have sum[#a nat] <: sum[#a integer, #b type]
           val keys = ts.keySet union ts1.keySet
@@ -849,7 +970,7 @@ object tests extends scala.App with TypeCheck {
 
   def fff(a: Term): Term = nbe(a, testOnlyForceFullValue = true)
 
-  Debug = false
+  Debug = true
 
 
   val u = debugDefine("u",
@@ -935,6 +1056,41 @@ object tests extends scala.App with TypeCheck {
     record("a", unit0, "b", unit0),
     unit_pair
   )
+
+  val empty = Context.Empty
+
+  //Debug = true
+  // sigma {a: type, b: unit}
+  val sigma_a_b = debugDefine("sigma_a_b", sigma("a", u, "b", unit), u)
+  // sigma {b: unit, a: type}
+  val sigma_b_a = debugDefine("sigma_b_a", sigma("b", unit, "a", u), u)
+  // sigma {a: type, c: unit}
+  val sigma_a_c = debugDefine("sigma_a_c", sigma("a", u, "c", unit), u)
+  val sigma_a = debugDefine("sigma_a", sigma("a", u), u)
+  val sigma_a_b_c = debugDefine("sigma_a_b_c", sigma("a", u, "b", unit, "c", unit), u)
+  assert(eval(sigma_a_b, empty.ctx) == eval(sigma_b_a, empty.ctx))
+  assert(eval(sigma_a_b, empty.ctx) != eval(sigma_a_c, empty.ctx))
+  assert(empty.meet(eval(sigma_a_b, empty.ctx), eval(sigma_b_a, empty.ctx)) == eval(sigma_a_b, empty.ctx))
+  assert(empty.join(eval(sigma_a_b, empty.ctx), eval(sigma_b_a, empty.ctx)) == eval(sigma_b_a, empty.ctx))
+  assert(empty.meet(eval(sigma_a_b, empty.ctx), eval(sigma_a_c, empty.ctx)) == eval(sigma_a_b_c, empty.ctx))
+  assert(empty.join(eval(sigma_a_b, empty.ctx), eval(sigma_a_c, empty.ctx)) == eval(sigma_a, empty.ctx))
+  assert(empty.meet(eval(sigma("n1", sigma_a_b), empty.ctx), eval(sigma("n1", sigma_a_c), empty.ctx)) == eval(sigma("n1", sigma_a_b_c), empty.ctx))
+  assert(empty.meet(eval(sigma("n1", sigma_a_b), empty.ctx), eval(sigma("n2", sigma_a_c), empty.ctx)) == eval(sigma("n1", sigma_a_b, "n2", sigma_a_c), empty.ctx))
+
+
+  // sigma {a: type, b: type, aa: a}
+  val sigma_a_b_aa = debugDefine("sigma_a_b_aa", sigma("a", u, "b", u, "aa", r(1)), u)
+  // sigma {a: type, b: type, aa: b}
+  val sigma_a_b_aa_as_b = debugDefine("sigma_a_b_aa_as_b", sigma("a", u, "b", u, "aa", r(0)), u)
+  // sigma {b: type, a: type, aa: a}
+  val sigma_a_aa_b = debugDefine("sigma_a_aa_b", sigma("a", u,"aa", r(0), "b", u), u)
+  assert(eval(sigma_a_b_aa, empty.ctx) == eval(sigma_a_aa_b, empty.ctx)) // order doesn't matter as long as tag dependency graph is same
+  assert(eval(sigma_a_b_aa, empty.ctx) != eval(sigma_a_b_aa_as_b, empty.ctx)) // sigma of diff dependency graph is not equal
+  fails(() => empty.meet(eval(sigma_a_b_aa, empty.ctx), eval(sigma_a_b_aa_as_b, empty.ctx))) // meet doesn't exists for this two, aa doesn't has compatible type
+  assert(empty.join(eval(sigma_a_b_aa, empty.ctx), eval(sigma_a_b_aa_as_b, empty.ctx)) == eval(sigma("a", u, "b", u), empty.ctx)) // aa is removed in join
+  assert(eval(sigma_a_b_aa, empty.ctx) != eval(sigma_a_b, empty.ctx))
+
+  //val meet = empty.meet(eval(sigma_a_b, empty.ctx), eval(sigma_a_c, empty.ctx)
 
 
 //  val unit_pair_1_1_alt = debugDefine("unit_pair_1_1_alt",
@@ -1062,7 +1218,6 @@ object tests extends scala.App with TypeCheck {
   )
 
 
-  Debug = true
   // lam n: nat => lam(y: (int => int) => {x: type, y: x}): (y (lam x => n)).x = y(lam x => n).y
   val test_lam_eq = debugDefine("test_lam_eq",
     lam(nat, lam(pi(pi(nat, nat), sigma("x", u, "y", r(0))), Projection(a(r(0), Lambda(None, r(2))), "y"))),
