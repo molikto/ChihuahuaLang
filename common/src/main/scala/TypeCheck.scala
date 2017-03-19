@@ -42,9 +42,6 @@ object sem {
     def split(bs: Map[String, Value => Value]): Value = throw new Exception()
   }
 
-
-  val Bottom = Sum(Map.empty)
-
   // these are where stuck state starts
   sealed abstract class Stuck extends Value {
     override def app(seq: Value): Value = App(this, seq)
@@ -706,7 +703,7 @@ trait TypeCheck {
 //          // assuming nat <: integer we have [nat, nat] <: [integer]
 //          val cx = merge(ms0, ms1)
 
-        case (a, b) => if (a == b) a else sem.Bottom
+        case (a, b) => if (a == b) a throw new Exception("Noooo!")
       }
     }
 
@@ -740,8 +737,8 @@ trait TypeCheck {
 //        case (s0@sem.Sigma(ms0, ts0), s1@sem.Sigma(ms1, ts1)) => // assuming nat <: integer we have sigma[@a nat, @b type] <: [@a integer]
 
         case (sem.Sum(ts), sem.Sum(ts1)) => // assuming nat <: integer, we have sum[#a nat] <: sum[#a integer, #b type]
-          val keys = ts.keySet intersect ts1.keySet
-          sem.Sum(keys.map(a => (a, meet(ts(a), ts1(a)))).toMap)
+          val keys = ts.keySet union ts1.keySet
+          sem.Sum(keys.map(a => (a, {val seq = ts.get(a).toSeq ++ ts1.get(a).toSeq; if (seq.size == 1) seq.head else join(seq.head, seq(1))})).toMap)
 
         case (a, b) => if (a == b) a else throw new Exception("No")
       }
@@ -750,8 +747,8 @@ trait TypeCheck {
 
 
     def join(seq: Seq[Value]): Value = {
-      if (seq.isEmpty) sem.Bottom
-      else seq.tail.fold(seq.head) { (v0, v1) => join(v0, v1)}
+      assert(seq.nonEmpty)
+      seq.tail.fold(seq.head) { (v0, v1) => join(v0, v1)}
     }
 
     def meet(seq: Seq[Value]): Value = {
