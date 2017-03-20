@@ -116,6 +116,14 @@ case class Split(left: Term, right: Map[String, Term]) extends Term {
   override def closed0(): Int = (left.closedRemember() +: right.values.map(_.closedRemember() - 1).toSeq).max
 }
 
+case class Equality(left: Term, right: Term) extends Term {
+  override def closed0(): Int = left.closedRemember() max right.closedRemember()
+}
+
+case class Refl() extends Term {
+  override def closed0(): Int = -1
+}
+
 
 
 case class Universe() extends Term {

@@ -577,6 +577,9 @@ trait TypeCheck {
         case Sigma(_, ts) =>
           ts.foldLeft(this) { (c, t) => c.expand(c.checkIsTypeAndEval(t)) }
           sem.Universe()
+        case Equality(left, right) =>
+          assert(infer(left) == infer(right))
+          sem.Universe()
         case Universe() =>
           sem.Universe()
       }

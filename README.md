@@ -4,7 +4,7 @@ this is my
 ## Programming Language Theory Playground
 
 
-codes here is may not be complete or working at all
+code here may not be complete or working at all
 
 
 some stuff
