@@ -63,16 +63,16 @@ case class Ascription(term: Term, ty: Term) extends Term {
 
 case class Lambda(is: Option[Term], body: Term) extends Term {
   override def closed0(): Int = is.map(_.closedRemember()).getOrElse(-1) max (body.closedRemember() - 1)
-  override def toString = s"lam(${is.getOrElse("")}) => $body"
+  override def toString = s"(${is.getOrElse("")}) -> $body"
 
 }
 case class Pi(is: Term, to: Term) extends Term { // only the right is UNDER BINDING...
   override def closed0(): Int = is.closedRemember max (to.closedRemember() - 1)
-  override def toString = s"pi($is => $to)"
+  override def toString = s"($is => $to)"
 }
 case class App(left: Term, right: Term) extends Term {
   override def closed0(): Int = left.closedRemember() max right.closedRemember()
-  override def toString = s"app($left, $right)"
+  override def toString = s"$left($right)"
 }
 
 //case class Let(vs: Seq[Term], body: Term) extends Term {
@@ -82,8 +82,9 @@ case class App(left: Term, right: Term) extends Term {
 
 case class Record(ms: Seq[String], ts: Seq[Term]) extends Term {
   assert(ms.size == ts.size)
+  assert(ms.toSet.size == ms.size)
   override def closed0(): Int = if (ts.isEmpty) -1 else ts.map(_.closedRemember()).max
-  override def toString = s"record[${ms.zip(ts).map(a => a._1 + " @ " + a._2).mkString(", ")}]"
+  override def toString = s"{${ms.zip(ts).map(a => a._1 + " = " + a._2).mkString(", ")}}"
 }
 
 // assume we have a acyclic directed graph, each node is labeled with a string, we can normalize it like this:
@@ -97,7 +98,7 @@ case class Sigma(ms: Seq[String], ts: Seq[Term]) extends Term { // so the left m
   assert(normalized())
   def normalized(): Boolean = true // TODO
   override def closed0(): Int = if (ts.isEmpty) -1 else ts.zipWithIndex.map(p => p._1.closedRemember() - p._2).max
-  override def toString = s"sigma[${ms.zip(ts).map(a => a._1 + " @ " + a._2).mkString(", ")}]"
+  override def toString = s"{${ms.zip(ts).map(a => a._1 + " = " + a._2).mkString(", ")}}"
 }
 case class Projection(left: Term, right: String) extends Term {
   override def closed0(): Int = left.closedRemember()
@@ -106,7 +107,7 @@ case class Projection(left: Term, right: String) extends Term {
 
 case class Sum(ts: Map[String, Term]) extends Term {
   override def closed0(): Int = if (ts.isEmpty) -1 else  ts.values.map(_.closedRemember()).max - 1
-  override def toString = s"sum{${ts.map(a => a._1 + " # " + a._2).mkString(", ")}}"
+  override def toString = s"[${ts.map(a => a._1 + " @ " + a._2).mkString(", ")}]"
 }
 case class Construct(name: String, v: Term) extends Term {
   override def closed0(): Int = v.closedRemember()
@@ -114,14 +115,6 @@ case class Construct(name: String, v: Term) extends Term {
 }
 case class Split(left: Term, right: Map[String, Term]) extends Term {
   override def closed0(): Int = (left.closedRemember() +: right.values.map(_.closedRemember() - 1).toSeq).max
-}
-
-case class Equality(left: Term, right: Term) extends Term {
-  override def closed0(): Int = left.closedRemember() max right.closedRemember()
-}
-
-case class Refl() extends Term {
-  override def closed0(): Int = -1
 }
 
 

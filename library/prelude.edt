@@ -1,0 +1,71 @@
+
+
+def list = (a: type) -> fix self -> [nil@ unit, cons@ {head: a, tail: self}]
+
+
+def nat = fix self -> [zero@ unit, succ@ self]
+
+def hashmap = (a: type, b: type) -> list({key: a, value: b})
+
+def string = list(nat) // TODO native string
+def int = unit // TODO native int
+def uint = unit // TODO native unit
+
+def option = (a: type) -> [some@ a, none@ unit]
+
+def nullable = (a: type) -> a
+
+def term = fix self -> {
+  annotation: {line_number: uint},
+  body: [
+    global_reference@ string,
+
+    local_reference@ uint,
+
+    fiks@ self,
+
+    ascription@ {term: self, taip: self},
+
+    lambda@ {param: option(self), body: self},
+    pi@ {param: self, taip: self},
+    app@ {fun: self, to: self},
+
+    record@ {tags: list(string), terms: list(self)},
+    sigma@  {tags: list(string), taips: list(self)},
+    projection@ {term: self, tag: string},
+
+    sum@ hashmap(string, self),
+    construct@ {tag: string, term: self},
+    splite@ {term: self, branches: hashmap(string, self)}
+  ]
+}
+
+// TODO inheritance like structure for lazy form and stuck form
+
+
+def value = fix self -> [
+  // lazy forms: we can expand more but we choose not now
+  // they are only expanded when needed, and it might not each a normal form
+  fiks@ (self) => self,
+  global_reference@ string,
+
+  // normal forms (as value they don't evaluate under lambda, only when needed)
+  lambda@ (self) => self,
+  construct@ {tag: string, term: self},
+  record@ {tags: list(string), terms: list(self)},
+
+  // type terms
+  pi@ {param: self, map: (self) => self},
+  sum@ hashmap(string, self),
+  sigma@ {tags: list(string), values: fix srh -> nullable({param: self, map: (self) => srh})},
+
+  // stuck term
+  generic@ string,
+  app@ {head: self, right: self},
+  projection@ {head: self, tag: string},
+  splite@ {head: self, branches: hashmap(string, (self) => self)}
+]
+
+def typing_context = list({generic: [generic@ string], taip: value})
+
+

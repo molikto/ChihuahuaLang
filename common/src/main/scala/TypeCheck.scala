@@ -1,4 +1,5 @@
 import com.twitter.util.Eval
+import jdk.nashorn.internal.runtime.logging.DebugLogger
 import org.snailya.mygame.UtilsCommon
 import sem.Generic
 
@@ -6,7 +7,6 @@ import scala.collection.mutable
 import scala.util.{Failure, Success, Try}
 
 
-// TODO: subtyping
 // TODO: what about this part...??? euqlity type? inductive family? cubicaltt?
 
 // the semantic world, it is not a trait but a object because it is easier to dynamic
@@ -509,13 +509,8 @@ trait TypeCheck {
               // will get rebind to them correctly after read back
               expand(ttt).expand(ct.head).check(tt, vty)
               ttt
-            case a: Sum =>
+            case a =>
               fixCheckType(a)
-            case a: Pi =>
-              fixCheckType(a)
-            case a: Sigma =>
-              fixCheckType(a)
-            case unknown => expand(sem.Poison).infer(unknown)
           }
         case Ascription(left, ty) =>
           val r = checkIsTypeAndEval(ty)
@@ -577,9 +572,9 @@ trait TypeCheck {
         case Sigma(_, ts) =>
           ts.foldLeft(this) { (c, t) => c.expand(c.checkIsTypeAndEval(t)) }
           sem.Universe()
-        case Equality(left, right) =>
-          assert(infer(left) == infer(right))
-          sem.Universe()
+//        case Equality(left, right) =>
+//          assert(infer(left) == infer(right))
+//          sem.Universe()
         case Universe() =>
           sem.Universe()
       }
@@ -877,12 +872,13 @@ trait TypeCheck {
   def check(f: Module): Unit = {
     f.ds.foreach(d => {
       val ty = Context.Empty.infer(d._2)
+      if (Debug) delog("Defined " + d._1)
       sem.global.add(d._1, sem.Def(eval(d._2, Seq.empty), ty))
     })
   }
 }
 
-object tests extends scala.App with TypeCheck {
+object TypeCheckTests extends scala.App with TypeCheck {
 
   import normal._
   val TermUnit0 = Record(Seq.empty, Seq.empty)
