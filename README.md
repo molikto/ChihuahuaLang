@@ -9,6 +9,7 @@ code here may not be complete or working at all
 
 main stuff
 * [a structural editor](gifs/editor)
+
    ![editor](gifs/editor/Mar-03-2017%2019-27-40.gif)
 * [dependent type theory type checker and compiled (JIT'ed) normalization by evaluation](common/src/main/scala/TypeCheck.scala)
     * references
