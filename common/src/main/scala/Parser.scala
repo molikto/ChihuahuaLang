@@ -184,6 +184,12 @@ trait Parser extends StandardTokenParsers with PackratParsers with ImplicitConve
   }
 }
 
+trait Backend {
+  def emit(s: Module): String = {
+    ???
+  }
+}
+
 import DebugLevel._
 object ParseTests extends scala.App with TypeCheck {
 
@@ -200,6 +206,4 @@ object ParseTests extends scala.App with TypeCheck {
     val endPos = parsed.next.pos
     throw new Exception("Parse failed " + endPos.line + ", " + endPos.column)
   }
-
-
 }

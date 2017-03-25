@@ -66,6 +66,6 @@ def value = fix self -> [
   splite@ {head: self, branches: hashmap(string, (self) => self)}
 ]
 
-def typing_context = list({generic: [generic@ string], taip: value})
+def typing_context = list({generic: string, taip: value})
 
 
