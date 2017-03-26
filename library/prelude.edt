@@ -43,6 +43,7 @@ def term = fix self -> {
 // TODO inheritance like structure for lazy form and stuck form
 
 
+// instead have a global reference as value, we will not have it
 def value = fix self -> [
   // lazy forms: we can expand more but we choose not now
   // they are only expanded when needed, and it might not each a normal form
