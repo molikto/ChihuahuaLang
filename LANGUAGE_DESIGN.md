@@ -4,6 +4,7 @@
 * goal
     * give the user freedom to do something when they know that what they are doing
     * give the user the static expressiveness when they want to ensure something
+    * good code should read as novel (good math books should read like a novel)
 
 * be reasonable
     * proof checkers
