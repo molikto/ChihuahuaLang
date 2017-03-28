@@ -15,6 +15,11 @@ def option = (a: type) -> [some@ a, none@ unit]
 
 def nullable = (a: type) -> a
 
+
+// start
+
+// we define the terms
+
 def term = fix self -> {
   annotation: {line_number: uint},
   body: [
@@ -22,7 +27,7 @@ def term = fix self -> {
 
     local_reference@ uint,
 
-    fiks@ self,
+    fix_@ self,
 
     ascription@ {term: self, taip: self},
 
@@ -36,7 +41,7 @@ def term = fix self -> {
 
     sum@ hashmap(string, self),
     construct@ {tag: string, term: self},
-    splite@ {term: self, branches: hashmap(string, self)}
+    split_@ {term: self, branches: hashmap(string, self)}
   ]
 }
 
@@ -47,7 +52,7 @@ def term = fix self -> {
 def value = fix self -> [
   // lazy forms: we can expand more but we choose not now
   // they are only expanded when needed, and it might not each a normal form
-  fiks@ (self) => self,
+  fix_@ (self) => self,
   global_reference@ string,
 
   // normal forms (as value they don't evaluate under lambda, only when needed)
@@ -64,7 +69,7 @@ def value = fix self -> [
   generic@ string,
   app@ {head: self, right: self},
   projection@ {head: self, tag: string},
-  splite@ {head: self, branches: hashmap(string, (self) => self)}
+  split_@ {head: self, branches: hashmap(string, (self) => self)}
 ]
 
 def typing_context = list({generic: string, taip: value})
