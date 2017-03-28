@@ -27,7 +27,21 @@
 * designing a general purpose language
     * mutation is hard
         * what about evaluation order? can you reorder fields? that's actually a question...
+        * what about memorization?
+        * what about side effects?
+        * seems no matter how you think of it, splitting the language into pure/inpure part will be too constraining
 
 
 * combined with a structural editor
     * the auto-completion as GUI framework, dependent type checking as the validation process - so whatever user input is correct
+
+
+* ad-hoc polymorphism or type-classes
+
+
+
+
+
+
+
+
