@@ -27,3 +27,7 @@
 * designing a general purpose language
     * mutation is hard
         * what about evaluation order? can you reorder fields? that's actually a question...
+
+
+* combined with a structural editor
+    * the auto-completion as GUI framework, dependent type checking as the validation process - so whatever user input is correct
