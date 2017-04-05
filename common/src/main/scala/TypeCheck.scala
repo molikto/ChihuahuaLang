@@ -2,6 +2,7 @@ import com.twitter.util.Eval
 import jdk.nashorn.internal.runtime.logging.DebugLogger
 import org.snailya.mygame.UtilsCommon
 import sem.Generic
+import syntax._
 
 import scala.collection.mutable
 import scala.util.{Failure, Success, Try}

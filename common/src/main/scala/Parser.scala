@@ -2,6 +2,7 @@
 import scala.collection.mutable
 import scala.util.parsing.combinator.syntactical.StandardTokenParsers
 import scala.util.parsing.combinator.{ImplicitConversions, PackratParsers}
+import syntax._
 
 trait Parser extends StandardTokenParsers with PackratParsers with ImplicitConversions {
 
