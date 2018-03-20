@@ -14,7 +14,7 @@ main stuff
    ![error reporting](gifs/editor/Feb-27-2017%2019-37-57.gif)
 * [dependent type theory type checker and compiled (JIT'ed) normalization by evaluation](common/src/main/scala/TypeCheck.scala)
     * it also implements subtyping for dependent records, and inductive types, but the soundness is not verified yet
-    * [code sample](https://github.com/molikto/ChihuahuaLang/blob/master/library/prelude.edt), you can run it in `Parser.java`
+    * [code sample](https://github.com/molikto/ChihuahuaLang/blob/master/library/prelude.edt), you can run it in `Parser.scala`
     * [tests](https://github.com/molikto/ChihuahuaLang/blob/master/common/src/main/scala/TypeCheck.scala#L973)
     * references
         * *Full reduction at full throttle*
